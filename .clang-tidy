@@ -5,6 +5,8 @@ Checks: >
   -modernize-use-trailing-return-type,
   performance-*,
   readability-*,
+  -readability-identifier-length,
+  -readability-implicit-bool-conversion,
   llvm-*,
   bugprone-*
 WarningsAsErrors: ''
@@ -12,7 +14,7 @@ HeaderFilterRegex: 'src/.*|tests/.*'
 FormatStyle:     none
 CheckOptions:
   - key:             readability-identifier-naming.NamespaceCase
-    value:           CamelCase
+    value:           LowerCase
   - key:             readability-identifier-naming.ClassCase
     value:           CamelCase
   - key:             readability-identifier-naming.FunctionCase

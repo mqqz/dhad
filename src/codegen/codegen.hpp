@@ -19,10 +19,10 @@ public:
   bool generate(const ast::Program& program);
 
   llvm::Module& module();
-  const llvm::Module& module() const;
+  [[nodiscard]] const llvm::Module& module() const;
   llvm::LLVMContext& context();
 
-  std::string emitIR() const;
+  [[nodiscard]] std::string emitIR() const;
 
 private:
   struct Impl;

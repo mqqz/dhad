@@ -10,7 +10,7 @@
 
 namespace llvm {
 class raw_ostream;
-}
+} // namespace llvm
 
 namespace dhad::ast {
 
@@ -91,9 +91,9 @@ public:
 
   virtual ~ASTNode();
 
-  Kind getKind() const { return kind; }
-  const SourceLocation& getLocation() const { return location; }
-  const char* kindName() const { return kindName(kind); }
+  [[nodiscard]] Kind getKind() const { return kind; }
+  [[nodiscard]] const SourceLocation& getLocation() const { return location; }
+  [[nodiscard]] const char* kindName() const { return kindName(kind); }
   static const char* kindName(Kind kind);
   void dump(llvm::raw_ostream& os, unsigned indent = 0) const;
   void dump() const;
