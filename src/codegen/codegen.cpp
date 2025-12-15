@@ -769,8 +769,8 @@ llvm::Function* CodeGenModule::Impl::getOrDeclareFunction(const std::string& nam
   return declareExternalFallback(name);
 }
 
-llvm::Function* CodeGenModule::Impl::declareBuiltinFunction(
-    const stdlib::StdFunctionDescriptor& descriptor) {
+llvm::Function*
+CodeGenModule::Impl::declareBuiltinFunction(const stdlib::StdFunctionDescriptor& descriptor) {
   if (descriptor.asciiName == "std_print") {
     auto* type = llvm::FunctionType::get(builder.getInt32Ty(), {getBytePtrType()},
                                          /*isVarArg=*/false);
@@ -782,8 +782,7 @@ llvm::Function* CodeGenModule::Impl::declareBuiltinFunction(
 
 llvm::Function* CodeGenModule::Impl::declareExternalFallback(const std::string& name) {
   std::vector<llvm::Type*> params;
-  auto* type =
-      llvm::FunctionType::get(builder.getInt32Ty(), params, /*isVarArg=*/true);
+  auto* type = llvm::FunctionType::get(builder.getInt32Ty(), params, /*isVarArg=*/true);
   return llvm::Function::Create(type, llvm::Function::ExternalLinkage, name, module.get());
 }
 
@@ -835,8 +834,7 @@ void CodeGenModule::Impl::definePrintFunction(const stdlib::StdFunctionDescripto
   auto* entry = llvm::BasicBlock::Create(context, "entry", printFunc);
   llvm::IRBuilder<> runtimeBuilder(entry);
   const std::string formatName(identifiers::kStdPrintFormatSymbol);
-  llvm::Value* format =
-      runtimeBuilder.CreateGlobalString("%s\n", formatName, 0, module.get());
+  llvm::Value* format = runtimeBuilder.CreateGlobalString("%s\n", formatName, 0, module.get());
   llvm::Value* msg = &*argIter;
   auto* call = runtimeBuilder.CreateCall(printfFunc, {format, msg});
   runtimeBuilder.CreateRet(call);

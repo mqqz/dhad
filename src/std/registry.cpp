@@ -7,8 +7,8 @@
 #include <utility>
 #include <vector>
 
-#include "std/native.hpp"
 #include "std/identifiers.hpp"
+#include "std/native.hpp"
 
 namespace dhad::stdlib {
 namespace {
@@ -78,8 +78,8 @@ std::vector<StdFunctionDescriptor> buildRegistry() {
   StdSignatureBuilder builder;
   for (const auto& def : builtinDefs) {
     auto type = def.signature(builder);
-    functions.push_back(StdFunctionDescriptor{std::string(def.arabicName), std::string(def.asciiName),
-                                              def.native, std::move(type)});
+    functions.push_back(StdFunctionDescriptor{
+        std::string(def.arabicName), std::string(def.asciiName), def.native, std::move(type)});
   }
   return functions;
 }

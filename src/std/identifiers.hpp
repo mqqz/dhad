@@ -4,8 +4,7 @@
 
 namespace dhad::identifiers {
 
-#define DHAD_DEFINE_IDENTIFIER(name, literal)                                             \
-  inline constexpr std::string_view name = literal
+#define DHAD_DEFINE_IDENTIFIER(name, literal) inline constexpr std::string_view name = literal
 
 DHAD_DEFINE_IDENTIFIER(kStdModule, u8"أساس");
 DHAD_DEFINE_IDENTIFIER(kStdPrint, u8"أساس.اطبع");
