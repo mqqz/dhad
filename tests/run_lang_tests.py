@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Smoke tests for the parser binary."""
+"""Unified golden tests for lexer and parser modes."""
 
 import argparse
 import sys
@@ -19,9 +19,9 @@ def example_display_path(example: Path) -> str:
 
 def parser_normalizer_factory(example: Path):
   def _normalizer(text: str) -> str:
-    normalised = text.replace("\r\n", "\n")
-    trailing_newline = normalised.endswith("\n")
-    lines = normalised.splitlines()
+    normalized = text.replace("\r\n", "\n")
+    trailing_newline = normalized.endswith("\n")
+    lines = normalized.splitlines()
     if lines and lines[0].startswith("Parse succeeded:"):
       lines[0] = f"Parse succeeded: {example_display_path(example)}"
     rebuilt = "\n".join(lines)
@@ -33,35 +33,37 @@ def parser_normalizer_factory(example: Path):
 
 
 def parse_args():
-  parser = argparse.ArgumentParser(description="Run parser smoke tests.")
-  parser.add_argument("--parser", required=True, help="Path to parser executable.")
-  parser.add_argument(
+  parser = argparse.ArgumentParser(description="Run lexer/parser golden tests.")
+  _= parser.add_argument("--driver", required=True, help="Path to lang_driver executable.")
+  _= parser.add_argument(
       "--case",
       action="append",
-      nargs=2,
-      metavar=("EXAMPLE", "EXPECTED"),
-      help="Example source path and expected output path.")
+      nargs=3,
+      metavar=("MODE", "EXAMPLE", "EXPECTED"),
+      help="Mode (lexer|parser), example source, expected output.")
   args = parser.parse_args()
   if not args.case:
-    parser.error("At least one --case must be provided")
+    parser.error("At least one --case is required")
   return args
 
 
 def main():
   args = parse_args()
-
   cases = []
-  for example, expected in args.case:
+  for mode, example, expected in args.case:
     example_path = Path(example)
+    extra = ("--mode", mode)
+    normalizer = parser_normalizer_factory(example_path) if mode == "parser" else None
+    label = f"{mode}:{example}"
     cases.append(
         GoldenCase(
             example=example_path,
             expected=Path(expected),
-            label=example,
-            normalizer=parser_normalizer_factory(example_path),
+            label=label,
+            normalizer=normalizer,
+            extra_args=extra,
         ))
-
-  failures = run_golden_cases(Path(args.parser), cases)
+  failures = run_golden_cases(Path(args.driver), cases)
   if failures:
     sys.stderr.write("\n".join(failures) + "\n")
     return 1

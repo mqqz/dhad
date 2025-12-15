@@ -168,17 +168,14 @@ dhad_strict_warnings(dhad_codegen)
 # Executables
 # ------------------------------------------------------------------------------
 
-add_executable(tokenize_ex1 EXCLUDE_FROM_ALL tests/tokenize_ex1.cpp)
-target_link_libraries(tokenize_ex1 PRIVATE dhad_lexer dhad_ast)
-target_include_directories(tokenize_ex1 PRIVATE src/lexer src/parser
-                                              "${CMAKE_CURRENT_BINARY_DIR}/generated")
-add_dependencies(tokenize_ex1 parser_tables_gen)
-dhad_strict_warnings(tokenize_ex1)
-
-add_executable(parse_ex1 EXCLUDE_FROM_ALL tests/parse_ex1.cpp)
-target_link_libraries(parse_ex1 PRIVATE dhad_parser)
-add_dependencies(parse_ex1 parser_tables_gen)
-dhad_strict_warnings(parse_ex1)
+add_executable(lang_driver tests/lang_driver.cpp)
+target_link_libraries(lang_driver PRIVATE dhad_lexer dhad_parser)
+target_include_directories(lang_driver PRIVATE src
+                                             src/lexer
+                                             src/parser
+                                             "${CMAKE_CURRENT_BINARY_DIR}/generated")
+add_dependencies(lang_driver parser_tables_gen)
+dhad_strict_warnings(lang_driver)
 
 add_executable(codegen_ex1 EXCLUDE_FROM_ALL tests/codegen_ex1.cpp)
 target_link_libraries(codegen_ex1 PRIVATE dhad_parser dhad_codegen)
@@ -201,10 +198,11 @@ if(BUILD_TESTING)
     NAME lexer_smoke
     COMMAND
       "${DHAD_TEST_PYTHON}"
-      "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_lexer_tests.py"
-      --tokenizer
-      "$<TARGET_FILE:tokenize_ex1>"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_lang_tests.py"
+      --driver
+      "$<TARGET_FILE:lang_driver>"
       --case
+      lexer
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/lexer_smoke.dh"
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/lexer_smoke.txt")
 
@@ -212,10 +210,11 @@ if(BUILD_TESTING)
     NAME parser_smoke
     COMMAND
       "${DHAD_TEST_PYTHON}"
-      "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_parser_tests.py"
-      --parser
-      "$<TARGET_FILE:parse_ex1>"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_lang_tests.py"
+      --driver
+      "$<TARGET_FILE:lang_driver>"
       --case
+      parser
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/parser_smoke.dh"
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/parser_smoke.txt")
 

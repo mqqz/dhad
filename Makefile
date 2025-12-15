@@ -25,8 +25,8 @@ compiler: configure
 	$(CMAKE) --build $(BUILD_DIR) --target dhad
 
 test: configure
-	$(CMAKE) --build $(BUILD_DIR) --target tokenize_ex1 parse_ex1 codegen_ex1
-	cd $(BUILD_DIR) && ctest --output-on-failure
+	$(CMAKE) --build $(BUILD_DIR) --target lang_driver codegen_ex1
+	$(PYTHON) tests/run_ctest.py --build-dir $(BUILD_DIR)
 
 venv: $(VENV_STAMP)
 

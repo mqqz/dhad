@@ -49,3 +49,4 @@ build/
 __pycache__/
 *.py[codz]
 *$py.class
+tests/.logs/

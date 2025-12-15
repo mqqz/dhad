@@ -7,7 +7,6 @@ import difflib
 import subprocess
 from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
-from typing import List, Union
 
 from subprocess import CompletedProcess
 
@@ -16,10 +15,10 @@ class CommandError(RuntimeError):
   """Raised when a subprocess exits with an unexpected return code."""
 
   cmd: list[str]
-  result: CompletedProcess[Union[str, bytes]]
+  result: CompletedProcess[str | bytes]
 
   def __init__(self, cmd: Sequence[str],
-               result: CompletedProcess[Union[str, bytes]]):
+               result: CompletedProcess[str| bytes]):
     self.cmd = list(cmd)
     self.result = result
     message = (
@@ -30,7 +29,7 @@ class CommandError(RuntimeError):
     super().__init__(message)
 
 
-def _as_text(data: Union[str, bytes, None]) -> str:
+def _as_text(data: str | bytes | None) -> str:
   if data is None:
     return ""
   if isinstance(data, str):
@@ -43,7 +42,7 @@ def run_command(cmd: Sequence[str],
                 input_data: bytes | str | None = None,
                 text: bool = True,
                 allowed_returncodes: Iterable[int] = (0,)
-               ) -> CompletedProcess[Union[str, bytes]]:
+               ) -> CompletedProcess[str | bytes]:
   """Run a subprocess and raise CommandError on failure."""
   result = subprocess.run(
       cmd,
@@ -69,10 +68,12 @@ class GoldenCase:
   expected: Path
   label: str | None = None
   normalizer: Callable[[str], str] | None = None
+  extra_args: tuple[str, ...] = ()
 
 
 def _default_command(tool: Path, case: GoldenCase) -> Sequence[str]:
-  return [str(tool), str(case.example)]
+  cmd = [str(tool), *case.extra_args, str(case.example)]
+  return cmd
 
 
 def run_golden_cases(
@@ -80,14 +81,14 @@ def run_golden_cases(
     cases: Sequence[GoldenCase],
     *,
     command_builder: Callable[[Path, GoldenCase], Sequence[str]] | None = None,
-) -> List[str]:
+) -> list[str]:
   """Run a CLI tool against multiple inputs and compare to golden outputs.
 
   Returns:
     A list of failure messages (empty when every case matches).
   """
   tool_path = Path(tool)
-  failures: List[str] = []
+  failures: list[str] = []
 
   if not tool_path.is_file():
     return [f"Tool not found: {tool_path}"]
@@ -113,7 +114,8 @@ def run_golden_cases(
 
     expected_text = expected.read_text(encoding="utf-8")
     normalizer = case.normalizer or _default_normalizer
-    actual_text = normalizer(result.stdout)
+    res_out_text = _as_text(result.stdout)
+    actual_text = normalizer(res_out_text)
     expected_text = normalizer(expected_text)
 
     if actual_text != expected_text:
