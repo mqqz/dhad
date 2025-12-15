@@ -43,3 +43,9 @@
 build/
 .*cache/
 .*env/
+
+# python stuff
+*.pyc
+__pycache__/
+*.py[codz]
+*$py.class
