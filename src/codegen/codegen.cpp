@@ -1,6 +1,8 @@
 #include "codegen.hpp"
 
 #include "../ast/ast.hpp"
+#include "../std/identifiers.hpp"
+#include "../std/runtime.hpp"
 
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Constants.h>
@@ -100,6 +102,9 @@ private:
   llvm::Value* emitLiteralExpr(const ast::LiteralExpr& expr);
   llvm::Value* emitIdentifierExpr(const ast::IdentifierExpr& expr);
   llvm::Value* emitCallExpr(const ast::CallExpr& expr);
+  llvm::Function* getOrDeclareFunction(const std::string& name);
+  llvm::Function* declareBuiltinFunction(const stdlib::StdFunctionDescriptor& descriptor);
+  llvm::Function* declareExternalFallback(const std::string& name);
   bool emitStatement(const ast::Statement* stmt);
   bool emitBlock(const ast::BlockStmt* block);
   bool emitDeclaration(const ast::DeclarationStmt& stmt);
@@ -114,6 +119,8 @@ private:
   bool declareFunction(const ast::FunctionDecl& fn);
   bool emitFunction(const ast::FunctionDecl& fn);
   void injectStdRuntime();
+  void defineStdFunctionBodies();
+  void definePrintFunction(const stdlib::StdFunctionDescriptor& descriptor);
 
   llvm::AllocaInst* lookupVariable(const std::string& name);
   void defineVariable(const std::string& name, llvm::AllocaInst* alloca);
@@ -137,6 +144,7 @@ private:
   std::vector<LoopContext> loopStack;
   std::unordered_map<const ast::FunctionDecl*, llvm::Function*> functions;
   bool stdRuntimeInjected{false};
+  stdlib::StdRuntime stdRuntime;
 };
 
 bool CodeGenModule::Impl::generate(const ast::Program& program) {
@@ -665,20 +673,9 @@ llvm::Value* CodeGenModule::Impl::emitIdentifierExpr(const ast::IdentifierExpr& 
 }
 
 llvm::Value* CodeGenModule::Impl::emitCallExpr(const ast::CallExpr& expr) {
-  llvm::Function* callee = module->getFunction(expr.callee);
+  llvm::Function* callee = getOrDeclareFunction(expr.callee);
   if (!callee) {
-    if (expr.callee == "اطبع") {
-      auto* type = llvm::FunctionType::get(builder.getInt32Ty(), {getBytePtrType()},
-                                           /*isVarArg=*/false);
-      callee =
-          llvm::Function::Create(type, llvm::Function::ExternalLinkage, expr.callee, module.get());
-    } else {
-      std::vector<llvm::Type*> params;
-      auto* type = llvm::FunctionType::get(builder.getInt32Ty(), params,
-                                           /*isVarArg=*/true);
-      callee =
-          llvm::Function::Create(type, llvm::Function::ExternalLinkage, expr.callee, module.get());
-    }
+    return nullptr;
   }
   std::vector<llvm::Value*> args;
   args.reserve(expr.args.size());
@@ -699,6 +696,34 @@ llvm::Value* CodeGenModule::Impl::emitCallExpr(const ast::CallExpr& expr) {
   return builder.CreateCall(callee, args, expr.callee + ".call");
 }
 
+llvm::Function* CodeGenModule::Impl::getOrDeclareFunction(const std::string& name) {
+  if (auto* existing = module->getFunction(name)) {
+    return existing;
+  }
+  if (const auto* builtin = stdRuntime.resolve(name)) {
+    return declareBuiltinFunction(*builtin);
+  }
+  return declareExternalFallback(name);
+}
+
+llvm::Function* CodeGenModule::Impl::declareBuiltinFunction(
+    const stdlib::StdFunctionDescriptor& descriptor) {
+  if (descriptor.asciiName == "std_print") {
+    auto* type = llvm::FunctionType::get(builder.getInt32Ty(), {getBytePtrType()},
+                                         /*isVarArg=*/false);
+    return llvm::Function::Create(type, llvm::Function::ExternalLinkage, descriptor.arabicName,
+                                  module.get());
+  }
+  return declareExternalFallback(descriptor.arabicName);
+}
+
+llvm::Function* CodeGenModule::Impl::declareExternalFallback(const std::string& name) {
+  std::vector<llvm::Type*> params;
+  auto* type =
+      llvm::FunctionType::get(builder.getInt32Ty(), params, /*isVarArg=*/true);
+  return llvm::Function::Create(type, llvm::Function::ExternalLinkage, name, module.get());
+}
+
 void CodeGenModule::Impl::injectStdRuntime() {
   if (stdRuntimeInjected) {
     return;
@@ -715,18 +740,29 @@ void CodeGenModule::Impl::injectStdRuntime() {
         llvm::Function::Create(printfType, llvm::Function::ExternalLinkage, "printf", module.get());
   }
 
-  auto* printType = llvm::FunctionType::get(intTy, {bytePtr}, false);
-  auto* printFunc = module->getFunction("اطبع");
-  if (!printFunc) {
-    printFunc =
-        llvm::Function::Create(printType, llvm::Function::ExternalLinkage, "اطبع", module.get());
-  }
+  (void)printfFunc;
+  defineStdFunctionBodies();
+}
 
-  if (!printFunc->empty()) {
+void CodeGenModule::Impl::defineStdFunctionBodies() {
+  for (const auto& fn : stdRuntime.functions()) {
+    if (fn.asciiName == "std_print") {
+      definePrintFunction(fn);
+    }
+  }
+}
+
+void CodeGenModule::Impl::definePrintFunction(const stdlib::StdFunctionDescriptor& descriptor) {
+  auto* printFunc = getOrDeclareFunction(descriptor.arabicName);
+  if (!printFunc || !printFunc->empty()) {
+    return;
+  }
+  if (printFunc->isVarArg() || printFunc->arg_size() != 1) {
     return;
   }
 
-  if (printFunc->isVarArg() || printFunc->arg_size() != 1) {
+  auto* printfFunc = module->getFunction("printf");
+  if (!printfFunc) {
     return;
   }
 
@@ -735,8 +771,9 @@ void CodeGenModule::Impl::injectStdRuntime() {
 
   auto* entry = llvm::BasicBlock::Create(context, "entry", printFunc);
   llvm::IRBuilder<> runtimeBuilder(entry);
+  const std::string formatName(identifiers::kStdPrintFormatSymbol);
   llvm::Value* format =
-      runtimeBuilder.CreateGlobalString("%s\n", u8"أساس.اطبع.تنسيق", 0, module.get());
+      runtimeBuilder.CreateGlobalString("%s\n", formatName, 0, module.get());
   llvm::Value* msg = &*argIter;
   auto* call = runtimeBuilder.CreateCall(printfFunc, {format, msg});
   runtimeBuilder.CreateRet(call);

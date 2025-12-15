@@ -135,7 +135,8 @@ add_library(dhad_typing STATIC
   src/typing/types.cpp
   src/typing/scope.cpp
   src/std/native.cpp
-  src/std/registry.cpp)
+  src/std/registry.cpp
+  src/std/runtime.cpp)
 target_include_directories(dhad_typing PUBLIC src)
 dhad_strict_warnings(dhad_typing)
 

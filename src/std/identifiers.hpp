@@ -12,6 +12,7 @@ DHAD_DEFINE_IDENTIFIER(kStdPrint, u8"أساس.اطبع");
 DHAD_DEFINE_IDENTIFIER(kStdArrayCreate, u8"أساس.أنشئ_مصفوفة");
 DHAD_DEFINE_IDENTIFIER(kStdArrayLength, u8"أساس.طول_مصفوفة");
 DHAD_DEFINE_IDENTIFIER(kPrint, u8"اطبع");
+DHAD_DEFINE_IDENTIFIER(kStdPrintFormatSymbol, u8"أساس.اطبع.تنسيق");
 
 #undef DHAD_DEFINE_IDENTIFIER
 

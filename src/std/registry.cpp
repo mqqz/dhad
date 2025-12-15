@@ -1,6 +1,11 @@
 #include "std/registry.hpp"
 
+#include <array>
+#include <cstddef>
+#include <string_view>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 
 #include "std/native.hpp"
 #include "std/identifiers.hpp"
@@ -11,29 +16,71 @@ namespace {
 using dhad::typing::TypeKind;
 using dhad::typing::TypePtr;
 
+class StdSignatureBuilder {
+public:
+  StdSignatureBuilder() = default;
+
+  TypePtr primitive(TypeKind kind) {
+    const std::size_t index = static_cast<std::size_t>(kind);
+    auto& slot = cache_[index];
+    if (!slot) {
+      slot = dhad::typing::makePrimitive(kind);
+    }
+    return slot;
+  }
+
+  TypePtr intType() { return primitive(TypeKind::Int); }
+  TypePtr stringType() { return primitive(TypeKind::String); }
+  TypePtr nullType() { return primitive(TypeKind::Null); }
+
+  TypePtr array(TypePtr element) { return dhad::typing::makeArray(std::move(element)); }
+  TypePtr function(std::vector<TypePtr> params, TypePtr result) {
+    return dhad::typing::makeFunction(std::move(params), std::move(result));
+  }
+
+private:
+  static constexpr std::size_t kTypeKindCount = static_cast<std::size_t>(TypeKind::Function) + 1;
+  std::array<TypePtr, kTypeKindCount> cache_{};
+};
+
+TypePtr buildPrintSignature(StdSignatureBuilder& builder) {
+  return builder.function({builder.stringType()}, builder.intType());
+}
+
+TypePtr buildArrayCreateSignature(StdSignatureBuilder& builder) {
+  return builder.function({builder.intType()}, builder.array(builder.nullType()));
+}
+
+TypePtr buildArrayLengthSignature(StdSignatureBuilder& builder) {
+  return builder.function({builder.array(builder.nullType())}, builder.intType());
+}
+
+struct BuiltinDef {
+  std::string_view arabicName;
+  std::string_view asciiName;
+  NativeFunction native;
+  TypePtr (*signature)(StdSignatureBuilder& builder);
+};
+
 std::vector<StdFunctionDescriptor> buildRegistry() {
   std::vector<StdFunctionDescriptor> functions;
   functions.reserve(4);
 
-  const auto intType = dhad::typing::makePrimitive(TypeKind::Int);
-  const auto stringType = dhad::typing::makePrimitive(TypeKind::String);
-  const auto nullType = dhad::typing::makePrimitive(TypeKind::Null);
-  const auto arrayAnyType = dhad::typing::makeArray(nullType);
+  const std::array<BuiltinDef, 4> builtinDefs = {{
+      {identifiers::kPrint, "std_print", &nativePrint, buildPrintSignature},
+      {identifiers::kStdPrint, "std_print", &nativePrint, buildPrintSignature},
+      {identifiers::kStdArrayCreate, "std_array_create", &nativeArrayCreate,
+       buildArrayCreateSignature},
+      {identifiers::kStdArrayLength, "std_array_length", &nativeArrayLength,
+       buildArrayLengthSignature},
+  }};
 
-  const auto printType = dhad::typing::makeFunction({stringType}, intType);
-  const auto arrayCreateType = dhad::typing::makeFunction({intType}, arrayAnyType);
-  const auto arrayLengthType = dhad::typing::makeFunction({arrayAnyType}, intType);
-
-  const auto add = [&functions](std::string_view arabic, std::string_view ascii,
-                                NativeFunction native, TypePtr type) {
-    functions.push_back(
-        StdFunctionDescriptor{std::string(arabic), std::string(ascii), native, std::move(type)});
-  };
-
-  add(identifiers::kPrint, "std_print", &nativePrint, printType);
-  add(identifiers::kStdPrint, "std_print", &nativePrint, printType);
-  add(identifiers::kStdArrayCreate, "std_array_create", &nativeArrayCreate, arrayCreateType);
-  add(identifiers::kStdArrayLength, "std_array_length", &nativeArrayLength, arrayLengthType);
+  StdSignatureBuilder builder;
+  for (const auto& def : builtinDefs) {
+    auto type = def.signature(builder);
+    functions.push_back(StdFunctionDescriptor{std::string(def.arabicName), std::string(def.asciiName),
+                                              def.native, std::move(type)});
+  }
   return functions;
 }
 

@@ -2,11 +2,18 @@
 
 #include <cassert>
 
-#include "std/registry.hpp"
+#include "std/runtime.hpp"
 
 namespace dhad::typing {
+namespace {
+const stdlib::StdRuntime& defaultRuntime() {
+  static const stdlib::StdRuntime runtime;
+  return runtime;
+}
+} // namespace
 
-ScopeStack::ScopeStack() {
+ScopeStack::ScopeStack(const stdlib::StdRuntime* runtime)
+    : runtime_(runtime ? runtime : &defaultRuntime()) {
   enterScope();
   seedGlobalScope();
 }
@@ -49,7 +56,7 @@ void ScopeStack::seedGlobalScope() {
   assert(scopes_.size() == 1 && "Global scope must exist before seeding");
 
   auto& global = currentScope();
-  for (const auto& builtin : stdlib::stdFunctionRegistry()) {
+  for (const auto& builtin : runtime_->functions()) {
     global.emplace(builtin.arabicName, builtin.type);
   }
 }

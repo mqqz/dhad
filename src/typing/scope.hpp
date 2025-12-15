@@ -7,13 +7,17 @@
 
 #include "typing/types.hpp"
 
+namespace dhad::stdlib {
+class StdRuntime;
+}
+
 namespace dhad::typing {
 
 class ScopeStack {
 public:
   using Scope = std::unordered_map<std::string, TypePtr>;
 
-  ScopeStack();
+  explicit ScopeStack(const stdlib::StdRuntime* runtime = nullptr);
 
   void enterScope();
   void exitScope();
@@ -25,6 +29,7 @@ public:
 
 private:
   std::vector<Scope> scopes_;
+  const stdlib::StdRuntime* runtime_{nullptr};
 
   Scope& currentScope();
   [[nodiscard]] const Scope& currentScope() const;
