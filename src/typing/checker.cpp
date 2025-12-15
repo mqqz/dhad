@@ -18,6 +18,8 @@ TypeChecker::TypeChecker() : scopes_(), currentReturnType_(voidType()) {}
 TypeCheckerResult TypeChecker::check(ast::Program& program) {
   errors_.clear();
   scopes_ = ScopeStack{};
+  currentFunction_ = nullptr;
+  currentReturnType_ = voidType();
 
   // Declare functions first so they can reference each other.
   for (auto& node : program.topLevel) {
@@ -261,9 +263,12 @@ TypePtr TypeChecker::checkBinary(ast::BinaryExpr& expr) {
   }
   const auto& op = expr.op;
   if (op == "+" || op == "-" || op == "*" || op == "/") {
-    requireNumeric(*expr.lhs, lhsType);
-    requireNumeric(*expr.rhs, rhsType);
-    return lhsType;
+    auto resultType = arithmeticResultType(lhsType, rhsType);
+    if (!resultType) {
+      reportError(expr.getLocation(), "Arithmetic operands must be numeric");
+      return nullptr;
+    }
+    return resultType;
   }
   if (op == "and" || op == "or") {
     requireBoolean(*expr.lhs, lhsType);
@@ -271,8 +276,28 @@ TypePtr TypeChecker::checkBinary(ast::BinaryExpr& expr) {
     return makePrimitive(TypeKind::Bool);
   }
   if (op == "==" || op == "!=" || op == "<" || op == "<=" || op == ">" || op == ">=") {
-    requireNumeric(*expr.lhs, lhsType);
-    requireNumeric(*expr.rhs, rhsType);
+    if (op == "==" || op == "!=") {
+      auto numeric = arithmeticResultType(lhsType, rhsType);
+      if (numeric) {
+        return makePrimitive(TypeKind::Bool);
+      }
+      const bool lhsNull = lhsType && lhsType->kind == TypeKind::Null;
+      const bool rhsNull = rhsType && rhsType->kind == TypeKind::Null;
+      const bool nullPointerCompare =
+          (lhsNull && rhsType && isPointerLike(rhsType->kind)) ||
+          (rhsNull && lhsType && isPointerLike(lhsType->kind));
+      if ((canImplicitlyConvert(lhsType, rhsType) && canImplicitlyConvert(rhsType, lhsType)) ||
+          typeEquals(lhsType, rhsType) || nullPointerCompare) {
+        return makePrimitive(TypeKind::Bool);
+      }
+      reportError(expr.getLocation(), "Operands of equality must be comparable");
+      return nullptr;
+    }
+    auto numeric = arithmeticResultType(lhsType, rhsType);
+    if (!numeric) {
+      reportError(expr.getLocation(), "Comparison operands must be numeric");
+      return nullptr;
+    }
     return makePrimitive(TypeKind::Bool);
   }
   reportError(expr.getLocation(), "Unsupported binary operator '" + op + "'");
@@ -346,11 +371,14 @@ TypePtr TypeChecker::requireBoolean(ast::Expression& expr, TypePtr type) {
 }
 
 TypePtr TypeChecker::requireNumeric(ast::Expression& expr, TypePtr type) {
-  if (!type || !isNumericKind(type->kind)) {
+  if (!type || !isArithmeticOperandKind(type->kind)) {
     reportError(expr.getLocation(), "Numeric expression required");
     return nullptr;
   }
-  return type;
+  if (type->kind == TypeKind::Float) {
+    return makePrimitive(TypeKind::Float);
+  }
+  return makePrimitive(TypeKind::Int);
 }
 
 bool TypeChecker::expectAssignable(const SourceLocation& loc, const TypePtr& target,
@@ -358,7 +386,7 @@ bool TypeChecker::expectAssignable(const SourceLocation& loc, const TypePtr& tar
   if (!target || !value) {
     return false;
   }
-  if (typeEquals(target, value)) {
+  if (canImplicitlyConvert(value, target)) {
     return true;
   }
   std::ostringstream os;
@@ -408,6 +436,79 @@ bool TypeChecker::typeEquals(const TypePtr& lhs, const TypePtr& rhs) const {
 
 bool TypeChecker::isNumericKind(TypeKind kind) const {
   return kind == TypeKind::Int || kind == TypeKind::Float;
+}
+
+bool TypeChecker::isArithmeticOperandKind(TypeKind kind) const {
+  return kind == TypeKind::Int || kind == TypeKind::Float || kind == TypeKind::Char;
+}
+
+bool TypeChecker::isPointerLike(TypeKind kind) const {
+  switch (kind) {
+  case TypeKind::String:
+  case TypeKind::Array:
+  case TypeKind::Sum:
+  case TypeKind::Product:
+    return true;
+  default:
+    return false;
+  }
+}
+
+TypePtr TypeChecker::arithmeticResultType(const TypePtr& lhs, const TypePtr& rhs) const {
+  if (!lhs || !rhs) {
+    return nullptr;
+  }
+  if (!isArithmeticOperandKind(lhs->kind) || !isArithmeticOperandKind(rhs->kind)) {
+    return nullptr;
+  }
+  if (lhs->kind == TypeKind::Float || rhs->kind == TypeKind::Float) {
+    return makePrimitive(TypeKind::Float);
+  }
+  return makePrimitive(TypeKind::Int);
+}
+
+bool TypeChecker::canImplicitlyConvert(const TypePtr& from, const TypePtr& to) const {
+  if (!from || !to) {
+    return false;
+  }
+  if (typeEquals(from, to)) {
+    return true;
+  }
+  if (from->kind == TypeKind::Char && to->kind == TypeKind::Int) {
+    return true;
+  }
+  if ((from->kind == TypeKind::Char || from->kind == TypeKind::Int) &&
+      to->kind == TypeKind::Float) {
+    return true;
+  }
+  if (from->kind == TypeKind::Null && isPointerLike(to->kind)) {
+    return true;
+  }
+  if (to->kind == TypeKind::Sum) {
+    const auto& sum = std::get<SumTypeInfo>(to->payload);
+    return std::any_of(sum.variants.begin(), sum.variants.end(),
+                       [&](const TypePtr& variant) { return typeEquals(variant, from); });
+  }
+  return false;
+}
+
+std::string formatTypeError(const TypeError& error, std::string_view sourceName) {
+  std::ostringstream os;
+  bool hasPath = !sourceName.empty();
+  if (hasPath) {
+    os << sourceName;
+  }
+  if (error.location.line != 0 || error.location.column != 0) {
+    if (hasPath) {
+      os << ":";
+    }
+    os << error.location.line << ":" << error.location.column;
+    os << ": ";
+  } else if (hasPath) {
+    os << ": ";
+  }
+  os << "error: " << error.message;
+  return os.str();
 }
 
 } // namespace dhad::typing

@@ -4,6 +4,7 @@
 
 #include "../src/codegen/codegen.hpp"
 #include "../src/parser/parser.hpp"
+#include "../src/typing/checker.hpp"
 
 #include <llvm/Support/raw_ostream.h>
 
@@ -22,6 +23,12 @@ std::string resolvePath(std::string path) {
   return path;
 }
 
+void printTypeErrors(const dhad::typing::TypeCheckerResult& result, const std::string& source) {
+  for (const auto& error : result.errors) {
+    std::cerr << dhad::typing::formatTypeError(error, source) << "\n";
+  }
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -36,6 +43,13 @@ int main(int argc, char** argv) {
   auto* program = llvm::dyn_cast<dhad::ast::Program>(parseResult.root.get());
   if (!program) {
     std::cerr << "Parse tree root is not a Program\n";
+    return 1;
+  }
+
+  dhad::typing::TypeChecker checker;
+  auto typeResult = checker.check(*program);
+  if (!typeResult.success) {
+    printTypeErrors(typeResult, path);
     return 1;
   }
 

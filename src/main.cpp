@@ -1,5 +1,6 @@
 #include "codegen/codegen.hpp"
 #include "parser/parser.hpp"
+#include "typing/checker.hpp"
 
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/FileSystem.h>
@@ -119,6 +120,12 @@ bool invokeClang(const std::string& inputIR, const std::string& outputPath) {
   return true;
 }
 
+void printTypeErrors(const dhad::typing::TypeCheckerResult& result, const std::string& source) {
+  for (const auto& error : result.errors) {
+    std::cerr << dhad::typing::formatTypeError(error, source) << "\n";
+  }
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -142,6 +149,13 @@ int main(int argc, char** argv) {
   auto* program = llvm::dyn_cast<dhad::ast::Program>(parseResult.root.get());
   if (!program) {
     std::cerr << "error: parser did not produce a Program root\n";
+    return 1;
+  }
+
+  dhad::typing::TypeChecker checker;
+  auto typeResult = checker.check(*program);
+  if (!typeResult.success) {
+    printTypeErrors(typeResult, opts.inputPath);
     return 1;
   }
 
