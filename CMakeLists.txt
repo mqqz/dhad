@@ -131,6 +131,14 @@ endfunction()
 # Libraries
 # ------------------------------------------------------------------------------
 
+add_library(dhad_typing STATIC
+  src/typing/types.cpp
+  src/typing/scope.cpp
+  src/std/native.cpp
+  src/std/registry.cpp)
+target_include_directories(dhad_typing PUBLIC src)
+dhad_strict_warnings(dhad_typing)
+
 add_library(dhad_ast STATIC src/ast/ast.cpp)
 target_include_directories(dhad_ast PUBLIC src ${LLVM_INCLUDE_DIRS})
 target_link_libraries(dhad_ast PUBLIC ${DHAD_LLVM_LIBS})
@@ -144,7 +152,7 @@ target_link_libraries(dhad_lexer PUBLIC dhad_ast)
 dhad_strict_warnings(dhad_lexer)
 
 add_library(dhad_parser STATIC src/parser/parser.cpp src/parser/rules.cpp)
-target_link_libraries(dhad_parser PUBLIC dhad_lexer dhad_ast)
+target_link_libraries(dhad_parser PUBLIC dhad_lexer dhad_ast dhad_typing)
 target_include_directories(dhad_parser
   PUBLIC src src/parser "${CMAKE_CURRENT_BINARY_DIR}/generated")
 add_dependencies(dhad_parser parser_tables_gen)
