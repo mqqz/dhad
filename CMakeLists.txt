@@ -134,10 +134,11 @@ endfunction()
 add_library(dhad_typing STATIC
   src/typing/types.cpp
   src/typing/scope.cpp
+  src/typing/checker.cpp
   src/std/native.cpp
   src/std/registry.cpp
   src/std/runtime.cpp)
-target_include_directories(dhad_typing PUBLIC src)
+target_include_directories(dhad_typing PUBLIC src ${LLVM_INCLUDE_DIRS})
 dhad_strict_warnings(dhad_typing)
 
 add_library(dhad_ast STATIC src/ast/ast.cpp)

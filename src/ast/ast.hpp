@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../lexer/tokens.hpp"
+#include "../typing/types.hpp"
 #include <memory>
 #include <optional>
 #include <string>
@@ -110,13 +111,45 @@ private:
 template <typename T> using NodePtr = std::unique_ptr<T>;
 
 struct Statement : ASTNode {
+  static bool classof(const ASTNode* node) {
+    switch (node->getKind()) {
+    case Kind::Program:
+    case Kind::ImportDecl:
+    case Kind::FunctionDecl:
+    case Kind::Parameter:
+      return false;
+    default:
+      return true;
+    }
+  }
+
 protected:
   Statement(Kind kind, SourceLocation loc) : ASTNode(kind, loc) {}
 };
 
 struct Expression : Statement {
+  static bool classof(const ASTNode* node) {
+    switch (node->getKind()) {
+    case Kind::Expression:
+    case Kind::BinaryExpr:
+    case Kind::UnaryExpr:
+    case Kind::LiteralExpr:
+    case Kind::IdentifierExpr:
+    case Kind::CallExpr:
+      return true;
+    default:
+      return false;
+    }
+  }
+
+  [[nodiscard]] typing::TypePtr resolvedType() const { return type_; }
+  void setResolvedType(typing::TypePtr type) { type_ = std::move(type); }
+
 protected:
   Expression(Kind kind, SourceLocation loc) : Statement(kind, loc) {}
+
+private:
+  typing::TypePtr type_;
 };
 
 struct Program : ASTNode {
