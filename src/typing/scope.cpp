@@ -1,6 +1,7 @@
 #include "typing/scope.hpp"
 
 #include <cassert>
+#include <utility>
 
 #include "std/runtime.hpp"
 
@@ -12,8 +13,17 @@ const stdlib::StdRuntime& defaultRuntime() {
 }
 } // namespace
 
-ScopeStack::ScopeStack(const stdlib::StdRuntime* runtime)
+ScopeStack::ScopeStack(const stdlib::StdRuntime* runtime, ScopeInitializer initializer)
     : runtime_(runtime ? runtime : &defaultRuntime()) {
+  if (initializer) {
+    initializer_ = std::move(initializer);
+  } else {
+    initializer_ = [this](Scope& scope) {
+      for (const auto& builtin : runtime_->functions()) {
+        scope.emplace(builtin.arabicName, builtin.type);
+      }
+    };
+  }
   enterScope();
   seedGlobalScope();
 }
@@ -56,8 +66,8 @@ void ScopeStack::seedGlobalScope() {
   assert(scopes_.size() == 1 && "Global scope must exist before seeding");
 
   auto& global = currentScope();
-  for (const auto& builtin : runtime_->functions()) {
-    global.emplace(builtin.arabicName, builtin.type);
+  if (initializer_) {
+    initializer_(global);
   }
 }
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <functional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -16,8 +17,10 @@ namespace dhad::typing {
 class ScopeStack {
 public:
   using Scope = std::unordered_map<std::string, TypePtr>;
+  using ScopeInitializer = std::function<void(Scope&)>;
 
-  explicit ScopeStack(const stdlib::StdRuntime* runtime = nullptr);
+  explicit ScopeStack(const stdlib::StdRuntime* runtime = nullptr,
+                      ScopeInitializer initializer = ScopeInitializer{});
 
   void enterScope();
   void exitScope();
@@ -30,6 +33,7 @@ public:
 private:
   std::vector<Scope> scopes_;
   const stdlib::StdRuntime* runtime_{nullptr};
+  ScopeInitializer initializer_;
 
   Scope& currentScope();
   [[nodiscard]] const Scope& currentScope() const;

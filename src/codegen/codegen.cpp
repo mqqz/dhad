@@ -28,6 +28,10 @@ namespace {
 constexpr std::string_view kEntryFunctionName = u8"بداية";
 constexpr const char* kEntryFunctionLLVMName = "main";
 
+enum class ArithmeticOp { Add, Sub, Mul, Div };
+enum class LogicalOp { And, Or };
+enum class ComparisonOp { Eq, Ne, Lt, Le, Gt, Ge };
+
 struct LoopContext {
   llvm::BasicBlock* continueTarget{nullptr};
   llvm::BasicBlock* breakTarget{nullptr};
@@ -38,6 +42,30 @@ std::string stripQuotes(std::string value) {
     value = value.substr(1, value.size() - 2);
   }
   return value;
+}
+
+std::optional<ArithmeticOp> decodeArithmeticOp(std::string_view token) {
+  if (token == "+") return ArithmeticOp::Add;
+  if (token == "-") return ArithmeticOp::Sub;
+  if (token == "*") return ArithmeticOp::Mul;
+  if (token == "/") return ArithmeticOp::Div;
+  return std::nullopt;
+}
+
+std::optional<LogicalOp> decodeLogicalOp(std::string_view token) {
+  if (token == "and") return LogicalOp::And;
+  if (token == "or") return LogicalOp::Or;
+  return std::nullopt;
+}
+
+std::optional<ComparisonOp> decodeComparisonOp(std::string_view token) {
+  if (token == "==") return ComparisonOp::Eq;
+  if (token == "!=") return ComparisonOp::Ne;
+  if (token == "<") return ComparisonOp::Lt;
+  if (token == "<=") return ComparisonOp::Le;
+  if (token == ">") return ComparisonOp::Gt;
+  if (token == ">=") return ComparisonOp::Ge;
+  return std::nullopt;
 }
 
 } // namespace
@@ -102,6 +130,9 @@ private:
   llvm::Value* emitLiteralExpr(const ast::LiteralExpr& expr);
   llvm::Value* emitIdentifierExpr(const ast::IdentifierExpr& expr);
   llvm::Value* emitCallExpr(const ast::CallExpr& expr);
+  llvm::Value* emitArithmeticBinary(ArithmeticOp op, llvm::Value* lhs, llvm::Value* rhs);
+  llvm::Value* emitLogicalBinary(LogicalOp op, llvm::Value* lhs, llvm::Value* rhs);
+  llvm::Value* emitComparisonBinary(ComparisonOp op, llvm::Value* lhs, llvm::Value* rhs);
   llvm::Function* getOrDeclareFunction(const std::string& name);
   llvm::Function* declareBuiltinFunction(const stdlib::StdFunctionDescriptor& descriptor);
   llvm::Function* declareExternalFallback(const std::string& name);
@@ -578,43 +609,15 @@ llvm::Value* CodeGenModule::Impl::emitBinaryExpr(const ast::BinaryExpr& expr) {
     return nullptr;
   }
 
-  const std::string& op = expr.op;
-  if (op == "+" || op == "-" || op == "*" || op == "/") {
-    lhs = ensureInteger(lhs);
-    rhs = ensureInteger(rhs);
-    if (!lhs || !rhs) {
-      return nullptr;
-    }
-    if (op == "+") return builder.CreateAdd(lhs, rhs, "addtmp");
-    if (op == "-") return builder.CreateSub(lhs, rhs, "subtmp");
-    if (op == "*") return builder.CreateMul(lhs, rhs, "multmp");
-    return builder.CreateSDiv(lhs, rhs, "divtmp");
+  const std::string_view op(expr.op);
+  if (auto arith = decodeArithmeticOp(op)) {
+    return emitArithmeticBinary(*arith, lhs, rhs);
   }
-
-  if (op == "and" || op == "or") {
-    lhs = ensureBoolean(lhs);
-    rhs = ensureBoolean(rhs);
-    if (!lhs || !rhs) {
-      return nullptr;
-    }
-    if (op == "and") {
-      return builder.CreateAnd(lhs, rhs, "andtmp");
-    }
-    return builder.CreateOr(lhs, rhs, "ortmp");
+  if (auto logical = decodeLogicalOp(op)) {
+    return emitLogicalBinary(*logical, lhs, rhs);
   }
-
-  if (op == "==" || op == "!=" || op == "<" || op == "<=" || op == ">" || op == ">=") {
-    lhs = ensureInteger(lhs);
-    rhs = ensureInteger(rhs);
-    if (!lhs || !rhs) {
-      return nullptr;
-    }
-    if (op == "==") return builder.CreateICmpEQ(lhs, rhs, "eqtmp");
-    if (op == "!=") return builder.CreateICmpNE(lhs, rhs, "netmp");
-    if (op == "<") return builder.CreateICmpSLT(lhs, rhs, "lttmp");
-    if (op == "<=") return builder.CreateICmpSLE(lhs, rhs, "letmp");
-    if (op == ">") return builder.CreateICmpSGT(lhs, rhs, "gttmp");
-    return builder.CreateICmpSGE(lhs, rhs, "getmp");
+  if (auto cmp = decodeComparisonOp(op)) {
+    return emitComparisonBinary(*cmp, lhs, rhs);
   }
 
   return nullptr;
@@ -694,6 +697,66 @@ llvm::Value* CodeGenModule::Impl::emitCallExpr(const ast::CallExpr& expr) {
     args.push_back(value);
   }
   return builder.CreateCall(callee, args, expr.callee + ".call");
+}
+
+llvm::Value* CodeGenModule::Impl::emitArithmeticBinary(ArithmeticOp op, llvm::Value* lhs,
+                                                       llvm::Value* rhs) {
+  lhs = ensureInteger(lhs);
+  rhs = ensureInteger(rhs);
+  if (!lhs || !rhs) {
+    return nullptr;
+  }
+  switch (op) {
+  case ArithmeticOp::Add:
+    return builder.CreateAdd(lhs, rhs, "addtmp");
+  case ArithmeticOp::Sub:
+    return builder.CreateSub(lhs, rhs, "subtmp");
+  case ArithmeticOp::Mul:
+    return builder.CreateMul(lhs, rhs, "multmp");
+  case ArithmeticOp::Div:
+    return builder.CreateSDiv(lhs, rhs, "divtmp");
+  }
+  return nullptr;
+}
+
+llvm::Value* CodeGenModule::Impl::emitLogicalBinary(LogicalOp op, llvm::Value* lhs,
+                                                    llvm::Value* rhs) {
+  lhs = ensureBoolean(lhs);
+  rhs = ensureBoolean(rhs);
+  if (!lhs || !rhs) {
+    return nullptr;
+  }
+  switch (op) {
+  case LogicalOp::And:
+    return builder.CreateAnd(lhs, rhs, "andtmp");
+  case LogicalOp::Or:
+    return builder.CreateOr(lhs, rhs, "ortmp");
+  }
+  return nullptr;
+}
+
+llvm::Value* CodeGenModule::Impl::emitComparisonBinary(ComparisonOp op, llvm::Value* lhs,
+                                                       llvm::Value* rhs) {
+  lhs = ensureInteger(lhs);
+  rhs = ensureInteger(rhs);
+  if (!lhs || !rhs) {
+    return nullptr;
+  }
+  switch (op) {
+  case ComparisonOp::Eq:
+    return builder.CreateICmpEQ(lhs, rhs, "eqtmp");
+  case ComparisonOp::Ne:
+    return builder.CreateICmpNE(lhs, rhs, "netmp");
+  case ComparisonOp::Lt:
+    return builder.CreateICmpSLT(lhs, rhs, "lttmp");
+  case ComparisonOp::Le:
+    return builder.CreateICmpSLE(lhs, rhs, "letmp");
+  case ComparisonOp::Gt:
+    return builder.CreateICmpSGT(lhs, rhs, "gttmp");
+  case ComparisonOp::Ge:
+    return builder.CreateICmpSGE(lhs, rhs, "getmp");
+  }
+  return nullptr;
 }
 
 llvm::Function* CodeGenModule::Impl::getOrDeclareFunction(const std::string& name) {
