@@ -1,0 +1,12 @@
+Parse succeeded: tests/sources/parser_smoke.dh
+Program
+  ImportDecl module="أساس"
+  FunctionDecl بداية -> int
+  Body:
+    BlockStmt
+      VarDecl س: int
+      Initializer:
+        Literal "10"
+      ReturnStmt
+      Value:
+        Identifier س
