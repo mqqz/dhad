@@ -45,4 +45,4 @@ The language uses a handwritten LALR(1) parser and an LLVM backend (so hopefully
 - `make format` runs `clang-format-20` over `src/` and `tests/`.
 
 Contributions are welcome, just be aware that the design is changing quickly and I am still figuring out the fundamentals. Tune in via issues/PRs if you want to help
-shape the language.\*\*\*
+shape the language.
