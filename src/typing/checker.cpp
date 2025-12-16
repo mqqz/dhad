@@ -283,9 +283,8 @@ TypePtr TypeChecker::checkBinary(ast::BinaryExpr& expr) {
       }
       const bool lhsNull = lhsType && lhsType->kind == TypeKind::Null;
       const bool rhsNull = rhsType && rhsType->kind == TypeKind::Null;
-      const bool nullPointerCompare =
-          (lhsNull && rhsType && isPointerLike(rhsType->kind)) ||
-          (rhsNull && lhsType && isPointerLike(lhsType->kind));
+      const bool nullPointerCompare = (lhsNull && rhsType && isPointerLike(rhsType->kind)) ||
+                                      (rhsNull && lhsType && isPointerLike(lhsType->kind));
       if ((canImplicitlyConvert(lhsType, rhsType) && canImplicitlyConvert(rhsType, lhsType)) ||
           typeEquals(lhsType, rhsType) || nullPointerCompare) {
         return makePrimitive(TypeKind::Bool);

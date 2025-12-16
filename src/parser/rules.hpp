@@ -12,66 +12,66 @@
 
 namespace dhad::parser {
 
-#define DHAD_PARSER_FOR_EACH_ACTION(F)                                                                \
-  F(AugmentedStartProgram)                                                                            \
-  F(ProgramFinish)                                                                                    \
-  F(TopLevelListAppend)                                                                               \
-  F(TopLevelListEmpty)                                                                                \
-  F(TopLevelImport)                                                                                   \
-  F(TopLevelFunction)                                                                                 \
-  F(TopLevelStatement)                                                                                \
-  F(ImportDecl)                                                                                       \
-  F(FunctionDecl)                                                                                     \
-  F(FunctionReturnTypeSome)                                                                           \
-  F(FunctionReturnTypeNone)                                                                           \
-  F(ParameterListSome)                                                                                \
-  F(ParameterListNone)                                                                                \
-  F(ParameterListBuild)                                                                               \
-  F(ParameterTailAppend)                                                                              \
-  F(ParameterTailEmpty)                                                                               \
-  F(ParameterDecl)                                                                                    \
-  F(TypeNameKeyword)                                                                                  \
-  F(BlockBuild)                                                                                       \
-  F(StatementListAppend)                                                                              \
-  F(StatementListEmpty)                                                                               \
-  F(StatementFromMatched)                                                                             \
-  F(StatementFromUnmatched)                                                                           \
-  F(PassStatementSemicolon)                                                                           \
-  F(PassStatement)                                                                                    \
-  F(ExpressionStatement)                                                                              \
-  F(BlockStatement)                                                                                   \
-  F(DeclarationStmt)                                                                                  \
-  F(TypeAnnotationSome)                                                                               \
-  F(TypeAnnotationNone)                                                                               \
-  F(AssignmentStmt)                                                                                   \
-  F(IfMatchedFull)                                                                                    \
-  F(IfUnmatchedNoElse)                                                                                \
-  F(IfUnmatchedWithElse)                                                                              \
-  F(WhileStmt)                                                                                        \
-  F(ForStmt)                                                                                          \
-  F(ReturnStmt)                                                                                       \
-  F(ReturnExprSome)                                                                                   \
-  F(ReturnExprNone)                                                                                   \
-  F(BreakStmt)                                                                                        \
-  F(ContinueStmt)                                                                                     \
-  F(CallExpression)                                                                                   \
-  F(ArgumentListSome)                                                                                 \
-  F(ArgumentListNone)                                                                                 \
-  F(ArgumentListBuild)                                                                                \
-  F(ArgumentTailAppend)                                                                               \
-  F(ArgumentTailEmpty)                                                                                \
-  F(ExpressionPass)                                                                                   \
-  F(BinaryExpr)                                                                                       \
-  F(UnaryPrefix)                                                                                      \
-  F(PrimaryLiteral)                                                                                   \
-  F(PrimaryIdentifier)                                                                                \
+#define DHAD_PARSER_FOR_EACH_ACTION(F)                                                             \
+  F(AugmentedStartProgram)                                                                         \
+  F(ProgramFinish)                                                                                 \
+  F(TopLevelListAppend)                                                                            \
+  F(TopLevelListEmpty)                                                                             \
+  F(TopLevelImport)                                                                                \
+  F(TopLevelFunction)                                                                              \
+  F(TopLevelStatement)                                                                             \
+  F(ImportDecl)                                                                                    \
+  F(FunctionDecl)                                                                                  \
+  F(FunctionReturnTypeSome)                                                                        \
+  F(FunctionReturnTypeNone)                                                                        \
+  F(ParameterListSome)                                                                             \
+  F(ParameterListNone)                                                                             \
+  F(ParameterListBuild)                                                                            \
+  F(ParameterTailAppend)                                                                           \
+  F(ParameterTailEmpty)                                                                            \
+  F(ParameterDecl)                                                                                 \
+  F(TypeNameKeyword)                                                                               \
+  F(BlockBuild)                                                                                    \
+  F(StatementListAppend)                                                                           \
+  F(StatementListEmpty)                                                                            \
+  F(StatementFromMatched)                                                                          \
+  F(StatementFromUnmatched)                                                                        \
+  F(PassStatementSemicolon)                                                                        \
+  F(PassStatement)                                                                                 \
+  F(ExpressionStatement)                                                                           \
+  F(BlockStatement)                                                                                \
+  F(DeclarationStmt)                                                                               \
+  F(TypeAnnotationSome)                                                                            \
+  F(TypeAnnotationNone)                                                                            \
+  F(AssignmentStmt)                                                                                \
+  F(IfMatchedFull)                                                                                 \
+  F(IfUnmatchedNoElse)                                                                             \
+  F(IfUnmatchedWithElse)                                                                           \
+  F(WhileStmt)                                                                                     \
+  F(ForStmt)                                                                                       \
+  F(ReturnStmt)                                                                                    \
+  F(ReturnExprSome)                                                                                \
+  F(ReturnExprNone)                                                                                \
+  F(BreakStmt)                                                                                     \
+  F(ContinueStmt)                                                                                  \
+  F(CallExpression)                                                                                \
+  F(ArgumentListSome)                                                                              \
+  F(ArgumentListNone)                                                                              \
+  F(ArgumentListBuild)                                                                             \
+  F(ArgumentTailAppend)                                                                            \
+  F(ArgumentTailEmpty)                                                                             \
+  F(ExpressionPass)                                                                                \
+  F(BinaryExpr)                                                                                    \
+  F(UnaryPrefix)                                                                                   \
+  F(PrimaryLiteral)                                                                                \
+  F(PrimaryIdentifier)                                                                             \
   F(PrimaryGrouping)
 
 enum class ActionId : std::uint8_t {
 #define DECLARE_ACTION(name) name,
   DHAD_PARSER_FOR_EACH_ACTION(DECLARE_ACTION)
 #undef DECLARE_ACTION
-  Count
+      Count
 };
 
 struct NonTerminal {
