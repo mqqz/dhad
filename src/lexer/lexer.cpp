@@ -1,11 +1,18 @@
 #include "lexer.hpp"
 #include <unordered_map>
 
-static const std::unordered_map<std::string, TokenType> kwTable = {
-#define KEYWORD(ar, kw) {u8## #ar, TokenType::kw},
-#include "keywords.def"
-#undef KEYWORD
-};
+static const std::unordered_map<std::string, TokenType> kwTable = [] {
+  std::unordered_map<std::string, TokenType> table;
+  for (std::size_t i = 0; i < static_cast<std::size_t>(TokenType::Count); ++i) {
+    auto type = static_cast<TokenType>(i);
+    if (const char* keyword = dhad::lexer::tokenKeywordLexeme(type)) {
+      if (keyword[0] != '\0') {
+        table.emplace(keyword, type);
+      }
+    }
+  }
+  return table;
+}();
 
 static const std::unordered_map<char32_t, TokenType> singleCharTokens = {
     {U'(', TokenType::LPAREN}, {U')', TokenType::RPAREN},  {U'{', TokenType::LBRACE},

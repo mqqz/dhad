@@ -141,7 +141,7 @@ add_library(dhad_typing STATIC
 target_include_directories(dhad_typing PUBLIC src ${LLVM_INCLUDE_DIRS})
 dhad_strict_warnings(dhad_typing)
 
-add_library(dhad_ast STATIC src/ast/ast.cpp)
+add_library(dhad_ast STATIC src/ast/ast.cpp src/ast/builders.cpp)
 target_include_directories(dhad_ast PUBLIC src ${LLVM_INCLUDE_DIRS})
 target_link_libraries(dhad_ast PUBLIC ${DHAD_LLVM_LIBS})
 dhad_strict_warnings(dhad_ast)
@@ -153,7 +153,8 @@ target_include_directories(dhad_lexer
 target_link_libraries(dhad_lexer PUBLIC dhad_ast)
 dhad_strict_warnings(dhad_lexer)
 
-add_library(dhad_parser STATIC src/parser/parser.cpp src/parser/rules.cpp)
+add_library(dhad_parser STATIC src/parser/parser.cpp src/parser/rules.cpp
+                              src/parser/actions.cpp)
 target_link_libraries(dhad_parser PUBLIC dhad_lexer dhad_ast dhad_typing)
 target_include_directories(dhad_parser
   PUBLIC src src/parser "${CMAKE_CURRENT_BINARY_DIR}/generated")

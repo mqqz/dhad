@@ -32,7 +32,7 @@ struct SemanticValue {
                    ProgramPtr, StatementPtr, ExpressionPtr, BlockPtr, ParameterPtr, TopLevelList,
                    StatementList, ParameterList, ExpressionList>;
 
-  Storage storage{};
+  Storage storage;
 
   SemanticValue() = default;
   explicit SemanticValue(Token token) : storage(std::move(token)) {}
@@ -49,7 +49,9 @@ struct SemanticValue {
   explicit SemanticValue(ParameterList list) : storage(std::move(list)) {}
   explicit SemanticValue(ExpressionList list) : storage(std::move(list)) {}
 
-  template <typename T> bool holds() const { return std::holds_alternative<T>(storage); }
+  template <typename T> [[nodiscard]] bool holds() const {
+    return std::holds_alternative<T>(storage);
+  }
 
   template <typename T> T take() {
     if (!std::holds_alternative<T>(storage)) {
@@ -60,7 +62,7 @@ struct SemanticValue {
     return value;
   }
 
-  bool hasNode() const {
+  [[nodiscard]] bool hasNode() const {
     return holds<ASTNodePtr>() || holds<ProgramPtr>() || holds<StatementPtr>() ||
            holds<ExpressionPtr>() || holds<BlockPtr>() || holds<ParameterPtr>();
   }
@@ -109,16 +111,20 @@ private:
 
   Token nextToken();
   void ensureLookahead();
-  Action actionFor(int state, TokenType terminal) const;
-  int gotoFor(int state, NonTerminalId symbol) const;
-  ParseResult makeFailure() const;
+  [[nodiscard]] Action actionFor(int state, TokenType terminal) const;
+  [[nodiscard]] int gotoFor(int state, NonTerminalId symbol) const;
+  [[nodiscard]] ParseResult makeFailure() const;
   SemanticValue performReduction(int ruleIndex, std::vector<SemanticValue>&& children);
 
   Lexer& lexer;
   const std::vector<ProductionRule>& grammar;
+  const std::vector<ActionId>& ruleActions;
+  const std::vector<NonTerminalId>& ruleLHSIds;
   std::vector<StackEntry> stack;
   std::optional<Token> lookahead;
 };
+
+SemanticValue applyAction(ActionId action, std::vector<SemanticValue>&& children);
 
 ParseResult parseString(std::string source);
 ParseResult parseFile(const std::string& path);

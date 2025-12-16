@@ -6,7 +6,6 @@
 #include <string_view>
 
 #include "../src/lexer/lexer.hpp"
-#include "../src/lexer/token_utils.hpp"
 #include "../src/lexer/tokens.hpp"
 #include "../src/parser/parser.hpp"
 

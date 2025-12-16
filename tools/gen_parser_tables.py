@@ -167,13 +167,13 @@ def parse_grammar(grammar_path: pathlib.Path) -> list[Production]:
         args_str, end_idx = extract_arguments(source, paren_idx)
         arg_list = split_args(args_str)
         if macro == "RULE":
-            if not arg_list:
-                raise ValueError("RULE requires at least a left-hand side")
+            if len(arg_list) < 2:
+                raise ValueError("RULE requires a left-hand side and action")
             lhs = arg_list[0].strip()
-            rhs_symbols = [parse_symbol(arg) for arg in arg_list[1:]]
+            rhs_symbols = [parse_symbol(arg) for arg in arg_list[2:]]
         else:
-            if len(arg_list) != 1:
-                raise ValueError("RULE_EMPTY expects exactly one argument")
+            if len(arg_list) < 2:
+                raise ValueError("RULE_EMPTY expects a left-hand side and action")
             lhs = arg_list[0].strip()
             rhs_symbols = []
         productions.append(Production(lhs=lhs, rhs=rhs_symbols))

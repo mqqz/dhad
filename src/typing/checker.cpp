@@ -474,6 +474,9 @@ bool TypeChecker::canImplicitlyConvert(const TypePtr& from, const TypePtr& to) c
   if (typeEquals(from, to)) {
     return true;
   }
+  if (from->kind == TypeKind::Bool && to->kind == TypeKind::Int) {
+    return true;
+  }
   if (from->kind == TypeKind::Char && to->kind == TypeKind::Int) {
     return true;
   }
