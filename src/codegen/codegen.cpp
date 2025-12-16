@@ -11,6 +11,7 @@
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
 #include <llvm/IR/Verifier.h>
+#include <llvm/TargetParser/Host.h>
 #include <llvm/Support/raw_ostream.h>
 
 #include <optional>
@@ -113,7 +114,9 @@ struct CodeGenModule::Impl {
 
   explicit Impl(std::string name)
       : moduleName(std::move(name)), module(std::make_unique<llvm::Module>(moduleName, context)),
-        builder(context) {}
+        builder(context) {
+    module->setTargetTriple(llvm::sys::getDefaultTargetTriple());
+  }
 
   bool generate(const ast::Program& program);
   llvm::Module& getModule() { return *module; }
