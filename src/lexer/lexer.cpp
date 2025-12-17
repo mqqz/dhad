@@ -99,6 +99,9 @@ bool Lexer::isIdentChar(char32_t cp) const {
   if (cp == U'_') {
     return true;
   }
+  if (cp == U'؛') {
+    return false;
+  }
 
   bool asciiAlpha = (cp >= U'a' && cp <= U'z') || (cp >= U'A' && cp <= U'Z');
   return asciiAlpha || isDigit(cp) || cp > 0x7F;
