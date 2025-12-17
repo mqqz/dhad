@@ -138,11 +138,13 @@ add_library(dhad_typing STATIC
   src/std/native.cpp
   src/std/registry.cpp
   src/std/runtime.cpp)
-target_include_directories(dhad_typing PUBLIC src ${LLVM_INCLUDE_DIRS})
+target_include_directories(dhad_typing PUBLIC src)
+target_include_directories(dhad_typing SYSTEM PUBLIC ${LLVM_INCLUDE_DIRS})
 dhad_strict_warnings(dhad_typing)
 
 add_library(dhad_ast STATIC src/ast/ast.cpp src/ast/builders.cpp)
-target_include_directories(dhad_ast PUBLIC src ${LLVM_INCLUDE_DIRS})
+target_include_directories(dhad_ast PUBLIC src)
+target_include_directories(dhad_ast SYSTEM PUBLIC ${LLVM_INCLUDE_DIRS})
 target_link_libraries(dhad_ast PUBLIC ${DHAD_LLVM_LIBS})
 dhad_strict_warnings(dhad_ast)
 
@@ -163,7 +165,8 @@ dhad_strict_warnings(dhad_parser)
 
 add_library(dhad_codegen STATIC src/codegen/codegen.cpp)
 target_link_libraries(dhad_codegen PUBLIC dhad_ast ${DHAD_LLVM_LIBS})
-target_include_directories(dhad_codegen PUBLIC src ${LLVM_INCLUDE_DIRS})
+target_include_directories(dhad_codegen PUBLIC src)
+target_include_directories(dhad_codegen SYSTEM PUBLIC ${LLVM_INCLUDE_DIRS})
 dhad_strict_warnings(dhad_codegen)
 
 # ------------------------------------------------------------------------------
