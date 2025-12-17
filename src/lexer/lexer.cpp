@@ -15,12 +15,12 @@ static const std::unordered_map<std::string, TokenType> kwTable = [] {
 }();
 
 static const std::unordered_map<char32_t, TokenType> singleCharTokens = {
-    {U'(', TokenType::LPAREN},  {U')', TokenType::RPAREN},    {U'{', TokenType::LBRACE},
-    {U'}', TokenType::RBRACE},  {U'[', TokenType::LBRACKET},  {U']', TokenType::RBRACKET},
-    {U',', TokenType::COMMA},   {U';', TokenType::SEMICOLON}, {U':', TokenType::COLON},
-    {U'=', TokenType::ASSIGN},  {U'+', TokenType::PLUS},      {U'-', TokenType::MINUS},
-    {U'*', TokenType::MUL},     {U'/', TokenType::DIV},       {U'<', TokenType::LESS},
-    {U'>', TokenType::GREATER}, {U'|', TokenType::PIPE},
+    {U'(', TokenType::LPAREN},     {U')', TokenType::RPAREN},    {U'{', TokenType::LBRACE},
+    {U'}', TokenType::RBRACE},     {U'[', TokenType::LBRACKET},  {U']', TokenType::RBRACKET},
+    {U',', TokenType::COMMA},      {U'؛', TokenType::SEMICOLON}, {U':', TokenType::COLON},
+    {U'=', TokenType::ASSIGN},     {U'+', TokenType::PLUS},      {U'-', TokenType::MINUS},
+    {U'*', TokenType::MUL},        {U'/', TokenType::DIV},       {U'<', TokenType::LESS},
+    {U'>', TokenType::GREATER},    {U'|', TokenType::PIPE},
 };
 
 Lexer::Lexer(std::string source) : source(std::move(source)) {}
