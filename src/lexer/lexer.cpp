@@ -15,11 +15,12 @@ static const std::unordered_map<std::string, TokenType> kwTable = [] {
 }();
 
 static const std::unordered_map<char32_t, TokenType> singleCharTokens = {
-    {U'(', TokenType::LPAREN}, {U')', TokenType::RPAREN},  {U'{', TokenType::LBRACE},
-    {U'}', TokenType::RBRACE}, {U',', TokenType::COMMA},   {U';', TokenType::SEMICOLON},
-    {U':', TokenType::COLON},  {U'=', TokenType::ASSIGN},  {U'+', TokenType::PLUS},
-    {U'-', TokenType::MINUS},  {U'*', TokenType::MUL},     {U'/', TokenType::DIV},
-    {U'<', TokenType::LESS},   {U'>', TokenType::GREATER},
+    {U'(', TokenType::LPAREN},  {U')', TokenType::RPAREN},    {U'{', TokenType::LBRACE},
+    {U'}', TokenType::RBRACE},  {U'[', TokenType::LBRACKET},  {U']', TokenType::RBRACKET},
+    {U',', TokenType::COMMA},   {U';', TokenType::SEMICOLON}, {U':', TokenType::COLON},
+    {U'=', TokenType::ASSIGN},  {U'+', TokenType::PLUS},      {U'-', TokenType::MINUS},
+    {U'*', TokenType::MUL},     {U'/', TokenType::DIV},       {U'<', TokenType::LESS},
+    {U'>', TokenType::GREATER}, {U'|', TokenType::PIPE},
 };
 
 Lexer::Lexer(std::string source) : source(std::move(source)) {}
@@ -29,7 +30,7 @@ std::optional<Lexer::DecodedChar> Lexer::decodeNext() {
     return std::nullopt;
   }
 
-  unsigned char lead = static_cast<unsigned char>(source[bytePos]);
+  auto lead = static_cast<unsigned char>(source[bytePos]);
   char32_t cp = 0;
   size_t byteCount = 1;
   bool valid = true;
@@ -54,7 +55,7 @@ std::optional<Lexer::DecodedChar> Lexer::decodeNext() {
   }
 
   for (size_t i = 1; i < byteCount; ++i) {
-    unsigned char b = static_cast<unsigned char>(source[bytePos + i]);
+    auto b = static_cast<unsigned char>(source[bytePos + i]);
     if ((b & 0xC0) != 0x80) {
       valid = false;
       break;
@@ -87,11 +88,6 @@ std::optional<Lexer::DecodedChar> Lexer::getChar() {
   }
 
   return decoded;
-}
-
-bool Lexer::isWhitespace(char32_t cp) const {
-  return cp == U' ' || cp == U'\t' || cp == U'\n' || cp == U'\r' || cp == U'\v' || cp == U'\f' ||
-         cp == U'\u00A0';
 }
 
 bool Lexer::isDigit(char32_t cp) const {

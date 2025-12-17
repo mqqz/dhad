@@ -10,7 +10,7 @@
 
 namespace dhad::stdlib {
 class StdRuntime;
-}
+} // namespace dhad::stdlib
 
 namespace dhad::typing {
 

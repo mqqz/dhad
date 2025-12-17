@@ -7,6 +7,89 @@ Program
       VarDecl س: int
       Initializer:
         Literal "10"
+      VarDecl مصفوفة: [int]
+      Initializer:
+        ArrayLiteral
+        Elements:
+          Literal "1"
+          Literal "2"
+          Literal "3"
+      VarDecl احتمال: int|string
+      Initializer:
+        Literal "0"
+      VarDecl زوج: int*int
+      Initializer:
+        Literal "1"
+      ConstDecl ض
+      Initializer:
+        Literal "20"
+      IfStmt
+      Condition:
+        BinaryExpr op="<"
+        LHS:
+          Identifier س
+        RHS:
+          Identifier ض
+      Then:
+        BlockStmt
+          ExpressionStmt
+          Value:
+            CallExpr callee=اطبع
+            Args:
+              Literal ""س أقل""
+      Else:
+        IfStmt
+        Condition:
+          BinaryExpr op="=="
+          LHS:
+            Identifier س
+          RHS:
+            Identifier ض
+        Then:
+          BlockStmt
+            ExpressionStmt
+            Value:
+              CallExpr callee=اطبع
+              Args:
+                Literal ""متساوي""
+        Else:
+          BlockStmt
+            ExpressionStmt
+            Value:
+              CallExpr callee=اطبع
+              Args:
+                Literal ""س أكبر""
+      WhileStmt
+      Condition:
+        BinaryExpr op="and"
+        LHS:
+          BinaryExpr op=">"
+          LHS:
+            Identifier س
+          RHS:
+            Literal "0"
+        RHS:
+          UnaryExpr op="not"
+          Operand:
+            Literal "false"
+      Body:
+        BlockStmt
+          Assignment target=س
+          Value:
+            BinaryExpr op="-"
+            LHS:
+              Identifier س
+            RHS:
+              Literal "1"
+          IfStmt
+          Condition:
+            BinaryExpr op="=="
+            LHS:
+              Identifier س
+            RHS:
+              Literal "5"
+          Then:
+            BreakStmt
       ReturnStmt
       Value:
-        Identifier س
+        Literal "true"

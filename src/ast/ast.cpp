@@ -130,6 +130,12 @@ public:
     visitNodeVec(node.args, "Args");
   }
 
+  void visit(const ArrayLiteralExpr& node) override {
+    indent();
+    os << "ArrayLiteral\n";
+    visitNodeVec(node.elements, "Elements");
+  }
+
 private:
   llvm::raw_ostream& os;
   unsigned currentIndent;
@@ -217,6 +223,8 @@ const char* ASTNode::kindName(Kind kind) {
     return "IdentifierExpr";
   case Kind::CallExpr:
     return "CallExpr";
+  case Kind::ArrayLiteralExpr:
+    return "ArrayLiteralExpr";
   }
   return "Unknown";
 }
@@ -231,52 +239,67 @@ void ASTNode::dump() const {
   accept(visitor);
 }
 
-Program::Program() : ASTNode(Kind::Program, SourceLocation{0, 0}) {}
+Program::Program() : NodeWithKind<Program, ASTNode::Kind::Program>(SourceLocation{0, 0}) {}
 
 ImportDecl::ImportDecl(std::string moduleName, SourceLocation loc)
-    : ASTNode(Kind::ImportDecl, loc), module(std::move(moduleName)) {}
+    : NodeWithKind<ImportDecl, ASTNode::Kind::ImportDecl>(loc), module(std::move(moduleName)) {}
 
 Parameter::Parameter(std::string name, std::string typeName, SourceLocation loc)
-    : ASTNode(Kind::Parameter, loc), name(std::move(name)), typeName(std::move(typeName)) {}
+    : NodeWithKind<Parameter, ASTNode::Kind::Parameter>(loc), name(std::move(name)),
+      typeName(std::move(typeName)) {}
 
-BlockStmt::BlockStmt(SourceLocation loc) : Statement(Kind::BlockStmt, loc) {}
+BlockStmt::BlockStmt(SourceLocation loc)
+    : NodeWithKind<BlockStmt, ASTNode::Kind::BlockStmt, Statement>(loc) {}
 
 FunctionDecl::FunctionDecl(std::string fnName, SourceLocation loc)
-    : ASTNode(Kind::FunctionDecl, loc), name(std::move(fnName)) {}
+    : NodeWithKind<FunctionDecl, ASTNode::Kind::FunctionDecl>(loc), name(std::move(fnName)) {}
 
 DeclarationStmt::DeclarationStmt(bool isConst, std::string identifier, SourceLocation loc)
-    : Statement(Kind::DeclarationStmt, loc), isConst(isConst), name(std::move(identifier)) {}
+    : NodeWithKind<DeclarationStmt, ASTNode::Kind::DeclarationStmt, Statement>(loc),
+      isConst(isConst), name(std::move(identifier)) {}
 
 AssignmentStmt::AssignmentStmt(std::string identifier, SourceLocation loc)
-    : Statement(Kind::AssignmentStmt, loc), target(std::move(identifier)) {}
+    : NodeWithKind<AssignmentStmt, ASTNode::Kind::AssignmentStmt, Statement>(loc),
+      target(std::move(identifier)) {}
 
-IfStmt::IfStmt(SourceLocation loc) : FlowStmt(Kind::IfStmt, loc) {}
+IfStmt::IfStmt(SourceLocation loc) : NodeWithKind<IfStmt, ASTNode::Kind::IfStmt, FlowStmt>(loc) {}
 
-WhileStmt::WhileStmt(SourceLocation loc) : FlowStmt(Kind::WhileStmt, loc) {}
+WhileStmt::WhileStmt(SourceLocation loc)
+    : NodeWithKind<WhileStmt, ASTNode::Kind::WhileStmt, FlowStmt>(loc) {}
 
-ForStmt::ForStmt(SourceLocation loc) : FlowStmt(Kind::ForStmt, loc) {}
+ForStmt::ForStmt(SourceLocation loc)
+    : NodeWithKind<ForStmt, ASTNode::Kind::ForStmt, FlowStmt>(loc) {}
 
-ReturnStmt::ReturnStmt(SourceLocation loc) : FlowStmt(Kind::ReturnStmt, loc) {}
+ReturnStmt::ReturnStmt(SourceLocation loc)
+    : NodeWithKind<ReturnStmt, ASTNode::Kind::ReturnStmt, FlowStmt>(loc) {}
 
-BreakStmt::BreakStmt(SourceLocation loc) : FlowStmt(Kind::BreakStmt, loc) {}
+BreakStmt::BreakStmt(SourceLocation loc)
+    : NodeWithKind<BreakStmt, ASTNode::Kind::BreakStmt, FlowStmt>(loc) {}
 
-ContinueStmt::ContinueStmt(SourceLocation loc) : FlowStmt(Kind::ContinueStmt, loc) {}
+ContinueStmt::ContinueStmt(SourceLocation loc)
+    : NodeWithKind<ContinueStmt, ASTNode::Kind::ContinueStmt, FlowStmt>(loc) {}
 
-ExpressionStmt::ExpressionStmt(SourceLocation loc) : Statement(Kind::ExpressionStmt, loc) {}
+ExpressionStmt::ExpressionStmt(SourceLocation loc)
+    : NodeWithKind<ExpressionStmt, ASTNode::Kind::ExpressionStmt, Statement>(loc) {}
 
 BinaryExpr::BinaryExpr(std::string op, SourceLocation loc)
-    : Expression(Kind::BinaryExpr, loc), op(std::move(op)) {}
+    : NodeWithKind<BinaryExpr, ASTNode::Kind::BinaryExpr, Expression>(loc), op(std::move(op)) {}
 
 UnaryExpr::UnaryExpr(std::string op, SourceLocation loc)
-    : Expression(Kind::UnaryExpr, loc), op(std::move(op)) {}
+    : NodeWithKind<UnaryExpr, ASTNode::Kind::UnaryExpr, Expression>(loc), op(std::move(op)) {}
 
 LiteralExpr::LiteralExpr(std::string literal, SourceLocation loc)
-    : Expression(Kind::LiteralExpr, loc), value(std::move(literal)) {}
+    : NodeWithKind<LiteralExpr, ASTNode::Kind::LiteralExpr, Expression>(loc),
+      value(std::move(literal)) {}
 
 IdentifierExpr::IdentifierExpr(std::string identifier, SourceLocation loc)
-    : Expression(Kind::IdentifierExpr, loc), name(std::move(identifier)) {}
+    : NodeWithKind<IdentifierExpr, ASTNode::Kind::IdentifierExpr, Expression>(loc),
+      name(std::move(identifier)) {}
 
 CallExpr::CallExpr(std::string callee, SourceLocation loc)
-    : Expression(Kind::CallExpr, loc), callee(std::move(callee)) {}
+    : NodeWithKind<CallExpr, ASTNode::Kind::CallExpr, Expression>(loc), callee(std::move(callee)) {}
+
+ArrayLiteralExpr::ArrayLiteralExpr(SourceLocation loc)
+    : NodeWithKind<ArrayLiteralExpr, ASTNode::Kind::ArrayLiteralExpr, Expression>(loc) {}
 
 } // namespace dhad::ast

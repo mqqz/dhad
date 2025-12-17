@@ -20,7 +20,7 @@ struct ReductionContext {
   [[nodiscard]] std::size_t size() const { return values.size(); }
 };
 
-#define DECLARE_ACTION_HANDLER(name) static SemanticValue action##name(ReductionContext&);
+#define DECLARE_ACTION_HANDLER(name) SemanticValue action##name(ReductionContext&);
 DHAD_PARSER_FOR_EACH_ACTION(DECLARE_ACTION_HANDLER)
 #undef DECLARE_ACTION_HANDLER
 
@@ -45,7 +45,7 @@ SV::TopLevelList appendNode(SV::TopLevelList list, SV::ASTNodePtr node) {
 // Action implementations
 // ----------------------------------------------------------------------------- //
 
-static SemanticValue actionAugmentedStartProgram(ReductionContext& ctx) {
+SemanticValue actionAugmentedStartProgram(ReductionContext& ctx) {
   if (ctx.size() == 1) {
     if (ctx.values[0].holds<SV::ProgramPtr>()) {
       return SemanticValue(ctx.take<SV::ProgramPtr>(0));
@@ -57,7 +57,7 @@ static SemanticValue actionAugmentedStartProgram(ReductionContext& ctx) {
   return SemanticValue{};
 }
 
-static SemanticValue actionProgramFinish(ReductionContext& ctx) {
+SemanticValue actionProgramFinish(ReductionContext& ctx) {
   auto topLevels = ctx.take<SV::TopLevelList>(0);
   if (ctx.size() > 1) {
     (void)ctx.take<Token>(1);
@@ -70,29 +70,29 @@ static SemanticValue actionProgramFinish(ReductionContext& ctx) {
   return SemanticValue(std::move(program));
 }
 
-static SemanticValue actionTopLevelListAppend(ReductionContext& ctx) {
+SemanticValue actionTopLevelListAppend(ReductionContext& ctx) {
   auto list = ctx.take<SV::TopLevelList>(0);
   list = appendNode(std::move(list), ctx.values[1].takeNode());
   return SemanticValue(std::move(list));
 }
 
-static SemanticValue actionTopLevelListEmpty(ReductionContext&) {
+SemanticValue actionTopLevelListEmpty(ReductionContext&) {
   return SemanticValue(SV::TopLevelList{});
 }
 
-static SemanticValue actionTopLevelImport(ReductionContext& ctx) {
+SemanticValue actionTopLevelImport(ReductionContext& ctx) {
   return SemanticValue(ctx.values[0].takeNode());
 }
-static SemanticValue actionTopLevelFunction(ReductionContext& ctx) {
+SemanticValue actionTopLevelFunction(ReductionContext& ctx) {
   return SemanticValue(ctx.values[0].takeNode());
 }
 
-static SemanticValue actionTopLevelStatement(ReductionContext& ctx) {
+SemanticValue actionTopLevelStatement(ReductionContext& ctx) {
   SV::ASTNodePtr node = ctx.take<SV::StatementPtr>(0);
   return SemanticValue(std::move(node));
 }
 
-static SemanticValue actionImportDecl(ReductionContext& ctx) {
+SemanticValue actionImportDecl(ReductionContext& ctx) {
   auto kw = ctx.take<Token>(0);
   auto ident = ctx.take<Token>(1);
   (void)ctx.take<Token>(2);
@@ -100,7 +100,7 @@ static SemanticValue actionImportDecl(ReductionContext& ctx) {
   return SemanticValue(SV::ASTNodePtr(std::move(node)));
 }
 
-static SemanticValue actionFunctionDecl(ReductionContext& ctx) {
+SemanticValue actionFunctionDecl(ReductionContext& ctx) {
   auto fnTok = ctx.take<Token>(0);
   auto nameTok = ctx.take<Token>(1);
   (void)ctx.take<Token>(2);
@@ -115,25 +115,25 @@ static SemanticValue actionFunctionDecl(ReductionContext& ctx) {
   return SemanticValue(SV::ASTNodePtr(std::move(fn)));
 }
 
-static SemanticValue actionFunctionReturnTypeSome(ReductionContext& ctx) {
+SemanticValue actionFunctionReturnTypeSome(ReductionContext& ctx) {
   (void)ctx.take<Token>(0);
   auto typeName = ctx.take<std::string>(1);
   return SemanticValue(std::optional<std::string>{std::move(typeName)});
 }
 
-static SemanticValue actionFunctionReturnTypeNone(ReductionContext&) {
+SemanticValue actionFunctionReturnTypeNone(ReductionContext&) {
   return SemanticValue(std::optional<std::string>{});
 }
 
-static SemanticValue actionParameterListSome(ReductionContext& ctx) {
+SemanticValue actionParameterListSome(ReductionContext& ctx) {
   return SemanticValue(ctx.take<SV::ParameterList>(0));
 }
 
-static SemanticValue actionParameterListNone(ReductionContext&) {
+SemanticValue actionParameterListNone(ReductionContext&) {
   return SemanticValue(SV::ParameterList{});
 }
 
-static SemanticValue actionParameterListBuild(ReductionContext& ctx) {
+SemanticValue actionParameterListBuild(ReductionContext& ctx) {
   auto first = ctx.take<SV::ParameterPtr>(0);
   auto tail = ctx.take<SV::ParameterList>(1);
   SV::ParameterList list;
@@ -144,7 +144,7 @@ static SemanticValue actionParameterListBuild(ReductionContext& ctx) {
   return SemanticValue(std::move(list));
 }
 
-static SemanticValue actionParameterTailAppend(ReductionContext& ctx) {
+SemanticValue actionParameterTailAppend(ReductionContext& ctx) {
   (void)ctx.take<Token>(0);
   auto param = ctx.take<SV::ParameterPtr>(1);
   auto tail = ctx.take<SV::ParameterList>(2);
@@ -156,11 +156,11 @@ static SemanticValue actionParameterTailAppend(ReductionContext& ctx) {
   return SemanticValue(std::move(list));
 }
 
-static SemanticValue actionParameterTailEmpty(ReductionContext&) {
+SemanticValue actionParameterTailEmpty(ReductionContext&) {
   return SemanticValue(SV::ParameterList{});
 }
 
-static SemanticValue actionParameterDecl(ReductionContext& ctx) {
+SemanticValue actionParameterDecl(ReductionContext& ctx) {
   auto nameTok = ctx.take<Token>(0);
   (void)ctx.take<Token>(1);
   auto typeName = ctx.take<std::string>(2);
@@ -169,12 +169,12 @@ static SemanticValue actionParameterDecl(ReductionContext& ctx) {
   return SemanticValue(SV::ParameterPtr(std::move(param)));
 }
 
-static SemanticValue actionTypeNameKeyword(ReductionContext& ctx) {
+SemanticValue actionTypeNameKeyword(ReductionContext& ctx) {
   auto tok = ctx.take<Token>(0);
   return SemanticValue(tokenText(tok));
 }
 
-static SemanticValue actionBlockBuild(ReductionContext& ctx) {
+SemanticValue actionBlockBuild(ReductionContext& ctx) {
   auto lbrace = ctx.take<Token>(0);
   auto statements = ctx.take<SV::StatementList>(1);
   (void)ctx.take<Token>(2);
@@ -185,25 +185,25 @@ static SemanticValue actionBlockBuild(ReductionContext& ctx) {
   return SemanticValue(SV::BlockPtr(std::move(block)));
 }
 
-static SemanticValue actionStatementListAppend(ReductionContext& ctx) {
+SemanticValue actionStatementListAppend(ReductionContext& ctx) {
   auto list = ctx.take<SV::StatementList>(0);
   list.push_back(ctx.take<SV::StatementPtr>(1));
   return SemanticValue(std::move(list));
 }
 
-static SemanticValue actionStatementListEmpty(ReductionContext&) {
+SemanticValue actionStatementListEmpty(ReductionContext&) {
   return SemanticValue(SV::StatementList{});
 }
 
-static SemanticValue actionStatementFromMatched(ReductionContext& ctx) {
+SemanticValue actionStatementFromMatched(ReductionContext& ctx) {
   return SemanticValue(ctx.take<SV::StatementPtr>(0));
 }
 
-static SemanticValue actionStatementFromUnmatched(ReductionContext& ctx) {
+SemanticValue actionStatementFromUnmatched(ReductionContext& ctx) {
   return SemanticValue(ctx.take<SV::StatementPtr>(0));
 }
 
-static SemanticValue actionPassStatementSemicolon(ReductionContext& ctx) {
+SemanticValue actionPassStatementSemicolon(ReductionContext& ctx) {
   auto stmt = ctx.take<SV::StatementPtr>(0);
   if (ctx.size() > 1) {
     (void)ctx.take<Token>(1);
@@ -211,11 +211,11 @@ static SemanticValue actionPassStatementSemicolon(ReductionContext& ctx) {
   return SemanticValue(std::move(stmt));
 }
 
-static SemanticValue actionPassStatement(ReductionContext& ctx) {
+SemanticValue actionPassStatement(ReductionContext& ctx) {
   return SemanticValue(ctx.take<SV::StatementPtr>(0));
 }
 
-static SemanticValue actionExpressionStatement(ReductionContext& ctx) {
+SemanticValue actionExpressionStatement(ReductionContext& ctx) {
   auto expr = ctx.take<SV::ExpressionPtr>(0);
   auto semi = ctx.take<Token>(1);
   auto stmt = std::make_unique<ast::ExpressionStmt>(semi.loc);
@@ -223,12 +223,12 @@ static SemanticValue actionExpressionStatement(ReductionContext& ctx) {
   return SemanticValue(SV::StatementPtr(std::move(stmt)));
 }
 
-static SemanticValue actionBlockStatement(ReductionContext& ctx) {
+SemanticValue actionBlockStatement(ReductionContext& ctx) {
   SV::StatementPtr stmt = ctx.take<SV::BlockPtr>(0);
   return SemanticValue(std::move(stmt));
 }
 
-static SemanticValue actionDeclarationStmt(ReductionContext& ctx) {
+SemanticValue actionDeclarationStmt(ReductionContext& ctx) {
   auto keyword = ctx.take<Token>(0);
   auto ident = ctx.take<Token>(1);
   auto typeOpt = ctx.take<std::optional<std::string>>(2);
@@ -241,17 +241,65 @@ static SemanticValue actionDeclarationStmt(ReductionContext& ctx) {
   return SemanticValue(SV::StatementPtr(std::move(decl)));
 }
 
-static SemanticValue actionTypeAnnotationSome(ReductionContext& ctx) {
+SemanticValue actionTypeAnnotationSome(ReductionContext& ctx) {
   (void)ctx.take<Token>(0);
   auto typeName = ctx.take<std::string>(1);
   return SemanticValue(std::optional<std::string>{std::move(typeName)});
 }
 
-static SemanticValue actionTypeAnnotationNone(ReductionContext&) {
+SemanticValue actionTypeAnnotationNone(ReductionContext&) {
   return SemanticValue(std::optional<std::string>{});
 }
 
-static SemanticValue actionAssignmentStmt(ReductionContext& ctx) {
+SemanticValue actionTypeNameUnion(ReductionContext& ctx) {
+  auto lhs = ctx.take<std::string>(0);
+  (void)ctx.take<Token>(1);
+  auto rhs = ctx.take<std::string>(2);
+  if (!lhs.empty()) {
+    lhs.push_back('|');
+  }
+  lhs += rhs;
+  return SemanticValue(std::move(lhs));
+}
+
+SemanticValue actionTypeNameFromProduct(ReductionContext& ctx) {
+  return SemanticValue(ctx.take<std::string>(0));
+}
+
+SemanticValue actionTypeProductCombine(ReductionContext& ctx) {
+  auto lhs = ctx.take<std::string>(0);
+  (void)ctx.take<Token>(1);
+  auto rhs = ctx.take<std::string>(2);
+  if (!lhs.empty()) {
+    lhs.push_back('*');
+  }
+  lhs += rhs;
+  return SemanticValue(std::move(lhs));
+}
+
+SemanticValue actionTypeProductFromPrimary(ReductionContext& ctx) {
+  return SemanticValue(ctx.take<std::string>(0));
+}
+
+SemanticValue actionTypePrimaryArray(ReductionContext& ctx) {
+  auto lbracket = ctx.take<Token>(0);
+  auto inner = ctx.take<std::string>(1);
+  (void)ctx.take<Token>(2);
+  std::string result = "[" + inner + "]";
+  if (result.empty()) {
+    result = tokenLexeme(lbracket);
+  }
+  return SemanticValue(std::move(result));
+}
+
+SemanticValue actionTypePrimaryGrouped(ReductionContext& ctx) {
+  (void)ctx.take<Token>(0);
+  auto inner = ctx.take<std::string>(1);
+  (void)ctx.take<Token>(2);
+  return SemanticValue(std::move(inner));
+}
+
+SemanticValue actionAssignmentStmt(ReductionContext& ctx) {
   auto ident = ctx.take<Token>(0);
   (void)ctx.take<Token>(1);
   auto value = ctx.take<SV::ExpressionPtr>(2);
@@ -260,7 +308,7 @@ static SemanticValue actionAssignmentStmt(ReductionContext& ctx) {
   return SemanticValue(SV::StatementPtr(std::move(stmt)));
 }
 
-static SemanticValue actionIfMatchedFull(ReductionContext& ctx) {
+SemanticValue actionIfMatchedFull(ReductionContext& ctx) {
   auto ifTok = ctx.take<Token>(0);
   (void)ctx.take<Token>(1);
   auto condition = ctx.take<SV::ExpressionPtr>(2);
@@ -275,7 +323,7 @@ static SemanticValue actionIfMatchedFull(ReductionContext& ctx) {
   return SemanticValue(SV::StatementPtr(std::move(stmt)));
 }
 
-static SemanticValue actionIfUnmatchedNoElse(ReductionContext& ctx) {
+SemanticValue actionIfUnmatchedNoElse(ReductionContext& ctx) {
   auto ifTok = ctx.take<Token>(0);
   (void)ctx.take<Token>(1);
   auto condition = ctx.take<SV::ExpressionPtr>(2);
@@ -287,7 +335,7 @@ static SemanticValue actionIfUnmatchedNoElse(ReductionContext& ctx) {
   return SemanticValue(SV::StatementPtr(std::move(stmt)));
 }
 
-static SemanticValue actionIfUnmatchedWithElse(ReductionContext& ctx) {
+SemanticValue actionIfUnmatchedWithElse(ReductionContext& ctx) {
   auto ifTok = ctx.take<Token>(0);
   (void)ctx.take<Token>(1);
   auto condition = ctx.take<SV::ExpressionPtr>(2);
@@ -302,7 +350,7 @@ static SemanticValue actionIfUnmatchedWithElse(ReductionContext& ctx) {
   return SemanticValue(SV::StatementPtr(std::move(stmt)));
 }
 
-static SemanticValue actionWhileStmt(ReductionContext& ctx) {
+SemanticValue actionWhileStmt(ReductionContext& ctx) {
   auto kw = ctx.take<Token>(0);
   (void)ctx.take<Token>(1);
   auto condition = ctx.take<SV::ExpressionPtr>(2);
@@ -314,7 +362,7 @@ static SemanticValue actionWhileStmt(ReductionContext& ctx) {
   return SemanticValue(SV::StatementPtr(std::move(stmt)));
 }
 
-static SemanticValue actionForStmt(ReductionContext& ctx) {
+SemanticValue actionForStmt(ReductionContext& ctx) {
   auto kw = ctx.take<Token>(0);
   (void)ctx.take<Token>(1);
   auto condition = ctx.take<SV::ExpressionPtr>(2);
@@ -326,7 +374,7 @@ static SemanticValue actionForStmt(ReductionContext& ctx) {
   return SemanticValue(SV::StatementPtr(std::move(stmt)));
 }
 
-static SemanticValue actionReturnStmt(ReductionContext& ctx) {
+SemanticValue actionReturnStmt(ReductionContext& ctx) {
   auto kw = ctx.take<Token>(0);
   auto value = ctx.take<SV::ExpressionPtr>(1);
   auto stmt = std::make_unique<ast::ReturnStmt>(kw.loc);
@@ -334,27 +382,25 @@ static SemanticValue actionReturnStmt(ReductionContext& ctx) {
   return SemanticValue(SV::StatementPtr(std::move(stmt)));
 }
 
-static SemanticValue actionReturnExprSome(ReductionContext& ctx) {
+SemanticValue actionReturnExprSome(ReductionContext& ctx) {
   return SemanticValue(ctx.take<SV::ExpressionPtr>(0));
 }
 
-static SemanticValue actionReturnExprNone(ReductionContext&) {
-  return SemanticValue(SV::ExpressionPtr{});
-}
+SemanticValue actionReturnExprNone(ReductionContext&) { return SemanticValue(SV::ExpressionPtr{}); }
 
-static SemanticValue actionBreakStmt(ReductionContext& ctx) {
+SemanticValue actionBreakStmt(ReductionContext& ctx) {
   auto tok = ctx.take<Token>(0);
   auto stmt = std::make_unique<ast::BreakStmt>(tok.loc);
   return SemanticValue(SV::StatementPtr(std::move(stmt)));
 }
 
-static SemanticValue actionContinueStmt(ReductionContext& ctx) {
+SemanticValue actionContinueStmt(ReductionContext& ctx) {
   auto tok = ctx.take<Token>(0);
   auto stmt = std::make_unique<ast::ContinueStmt>(tok.loc);
   return SemanticValue(SV::StatementPtr(std::move(stmt)));
 }
 
-static SemanticValue actionCallExpression(ReductionContext& ctx) {
+SemanticValue actionCallExpression(ReductionContext& ctx) {
   auto ident = ctx.take<Token>(0);
   (void)ctx.take<Token>(1);
   auto args = ctx.take<SV::ExpressionList>(2);
@@ -366,15 +412,15 @@ static SemanticValue actionCallExpression(ReductionContext& ctx) {
   return SemanticValue(SV::ExpressionPtr(std::move(call)));
 }
 
-static SemanticValue actionArgumentListSome(ReductionContext& ctx) {
+SemanticValue actionArgumentListSome(ReductionContext& ctx) {
   return SemanticValue(ctx.take<SV::ExpressionList>(0));
 }
 
-static SemanticValue actionArgumentListNone(ReductionContext&) {
+SemanticValue actionArgumentListNone(ReductionContext&) {
   return SemanticValue(SV::ExpressionList{});
 }
 
-static SemanticValue actionArgumentListBuild(ReductionContext& ctx) {
+SemanticValue actionArgumentListBuild(ReductionContext& ctx) {
   auto first = ctx.take<SV::ExpressionPtr>(0);
   auto tail = ctx.take<SV::ExpressionList>(1);
   SV::ExpressionList list;
@@ -385,7 +431,7 @@ static SemanticValue actionArgumentListBuild(ReductionContext& ctx) {
   return SemanticValue(std::move(list));
 }
 
-static SemanticValue actionArgumentTailAppend(ReductionContext& ctx) {
+SemanticValue actionArgumentTailAppend(ReductionContext& ctx) {
   (void)ctx.take<Token>(0);
   auto expr = ctx.take<SV::ExpressionPtr>(1);
   auto tail = ctx.take<SV::ExpressionList>(2);
@@ -397,42 +443,53 @@ static SemanticValue actionArgumentTailAppend(ReductionContext& ctx) {
   return SemanticValue(std::move(list));
 }
 
-static SemanticValue actionArgumentTailEmpty(ReductionContext&) {
+SemanticValue actionArgumentTailEmpty(ReductionContext&) {
   return SemanticValue(SV::ExpressionList{});
 }
 
-static SemanticValue actionExpressionPass(ReductionContext& ctx) {
+SemanticValue actionExpressionPass(ReductionContext& ctx) {
   return SemanticValue(ctx.take<SV::ExpressionPtr>(0));
 }
 
-static SemanticValue actionBinaryExpr(ReductionContext& ctx) {
+SemanticValue actionBinaryExpr(ReductionContext& ctx) {
   auto lhs = ctx.take<SV::ExpressionPtr>(0);
   auto op = ctx.take<Token>(1);
   auto rhs = ctx.take<SV::ExpressionPtr>(2);
   return SemanticValue(makeBinaryExpr(op, std::move(lhs), std::move(rhs)));
 }
 
-static SemanticValue actionUnaryPrefix(ReductionContext& ctx) {
+SemanticValue actionUnaryPrefix(ReductionContext& ctx) {
   auto op = ctx.take<Token>(0);
   auto operand = ctx.take<SV::ExpressionPtr>(1);
   return SemanticValue(makeUnaryExpr(op, std::move(operand)));
 }
 
-static SemanticValue actionPrimaryLiteral(ReductionContext& ctx) {
+SemanticValue actionPrimaryLiteral(ReductionContext& ctx) {
   auto tok = ctx.take<Token>(0);
   return SemanticValue(makeLiteralExpr(tok));
 }
 
-static SemanticValue actionPrimaryIdentifier(ReductionContext& ctx) {
+SemanticValue actionPrimaryIdentifier(ReductionContext& ctx) {
   auto tok = ctx.take<Token>(0);
   return SemanticValue(makeIdentifierExpr(tok, tokenLexeme(tok)));
 }
 
-static SemanticValue actionPrimaryGrouping(ReductionContext& ctx) {
+SemanticValue actionPrimaryGrouping(ReductionContext& ctx) {
   (void)ctx.take<Token>(0);
   auto expr = ctx.take<SV::ExpressionPtr>(1);
   (void)ctx.take<Token>(2);
   return SemanticValue(std::move(expr));
+}
+
+SemanticValue actionArrayLiteral(ReductionContext& ctx) {
+  auto lbracket = ctx.take<Token>(0);
+  auto elements = ctx.take<SV::ExpressionList>(1);
+  (void)ctx.take<Token>(2);
+  auto node = std::make_unique<ast::ArrayLiteralExpr>(lbracket.loc);
+  for (auto& element : elements) {
+    node->elements.push_back(std::move(element));
+  }
+  return SemanticValue(SV::ExpressionPtr(std::move(node)));
 }
 
 } // namespace

@@ -65,7 +65,14 @@ namespace dhad::parser {
   F(UnaryPrefix)                                                                                   \
   F(PrimaryLiteral)                                                                                \
   F(PrimaryIdentifier)                                                                             \
-  F(PrimaryGrouping)
+  F(PrimaryGrouping)                                                                               \
+  F(ArrayLiteral)                                                                                  \
+  F(TypeNameUnion)                                                                                 \
+  F(TypeNameFromProduct)                                                                           \
+  F(TypeProductCombine)                                                                            \
+  F(TypeProductFromPrimary)                                                                        \
+  F(TypePrimaryArray)                                                                              \
+  F(TypePrimaryGrouped)
 
 enum class ActionId : std::uint8_t {
 #define DECLARE_ACTION(name) name,

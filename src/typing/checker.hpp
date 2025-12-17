@@ -66,7 +66,7 @@ private:
   [[nodiscard]] bool isArithmeticOperandKind(TypeKind kind) const;
   [[nodiscard]] bool isPointerLike(TypeKind kind) const;
   [[nodiscard]] bool canImplicitlyConvert(const TypePtr& from, const TypePtr& to) const;
-  TypePtr arithmeticResultType(const TypePtr& lhs, const TypePtr& rhs) const;
+  [[nodiscard]] TypePtr arithmeticResultType(const TypePtr& lhs, const TypePtr& rhs) const;
 };
 
 std::string formatTypeError(const TypeError& error, std::string_view sourceName);

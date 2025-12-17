@@ -21,9 +21,13 @@ private:
   std::optional<DecodedChar> peekChar();
   std::optional<DecodedChar> getChar();
 
-  bool isWhitespace(char32_t cp) const;
-  bool isDigit(char32_t cp) const;
-  bool isIdentChar(char32_t cp) const;
+  static bool isWhitespace(char32_t cp) {
+    return cp == U' ' || cp == U'\t' || cp == U'\n' || cp == U'\r' || cp == U'\v' || cp == U'\f' ||
+           cp == U'\u00A0';
+  }
+
+  [[nodiscard]] bool isDigit(char32_t cp) const;
+  [[nodiscard]] bool isIdentChar(char32_t cp) const;
 
   Token readWhitespace(SourceLocation start);
   Token readLitStr(SourceLocation start, size_t tokenStartByte);

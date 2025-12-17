@@ -11,8 +11,8 @@ class StdRuntime {
 public:
   StdRuntime() = default;
 
-  const std::vector<StdFunctionDescriptor>& functions() const;
-  const StdFunctionDescriptor* resolve(std::string_view arabicName) const;
+  [[nodiscard]] const std::vector<StdFunctionDescriptor>& functions() const;
+  [[nodiscard]] const StdFunctionDescriptor* resolve(std::string_view arabicName) const;
   bool invoke(std::string_view arabicName, NativeCallContext& ctx) const;
 };
 

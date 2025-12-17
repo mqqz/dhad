@@ -60,6 +60,18 @@ def parse_args() -> CLIArgs:
     )
 
 
+def needs_regeneration(output_path: pathlib.Path, inputs: Sequence[pathlib.Path]) -> bool:
+    if not output_path.exists():
+        return True
+    out_mtime = output_path.stat().st_mtime
+    for path in inputs:
+        if not path.exists():
+            continue
+        if path.stat().st_mtime > out_mtime:
+            return True
+    return False
+
+
 def read_text(path: pathlib.Path) -> str:
     return path.read_text(encoding="utf-8")
 
@@ -639,6 +651,12 @@ def main() -> int:
     grammar_path = pathlib.Path(args.grammar_def)
     nonterm_path = pathlib.Path(args.nonterminals)
     output_path = pathlib.Path(args.output)
+    script_path = pathlib.Path(__file__).resolve()
+
+    watched_inputs = [grammar_path, nonterm_path, script_path]
+    if not args.force and not needs_regeneration(output_path, watched_inputs):
+        return 0
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     productions = parse_grammar(grammar_path)

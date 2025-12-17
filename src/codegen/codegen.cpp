@@ -15,7 +15,6 @@
 #include <llvm/TargetParser/Host.h>
 
 #include <optional>
-#include <sstream>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -105,6 +104,7 @@ struct CodeGenModule::Impl {
     void visit(const ast::LiteralExpr& node) override { value = impl.emitLiteralExpr(node); }
     void visit(const ast::IdentifierExpr& node) override { value = impl.emitIdentifierExpr(node); }
     void visit(const ast::CallExpr& node) override { value = impl.emitCallExpr(node); }
+    void visit(const ast::ArrayLiteralExpr& node) override { value = impl.emitArrayLiteral(node); }
 
     llvm::Value* value{nullptr};
 
@@ -133,6 +133,7 @@ private:
   llvm::Value* emitLiteralExpr(const ast::LiteralExpr& expr);
   llvm::Value* emitIdentifierExpr(const ast::IdentifierExpr& expr);
   llvm::Value* emitCallExpr(const ast::CallExpr& expr);
+  llvm::Value* emitArrayLiteral(const ast::ArrayLiteralExpr& expr);
   llvm::Value* emitArithmeticBinary(ArithmeticOp op, llvm::Value* lhs, llvm::Value* rhs);
   llvm::Value* emitLogicalBinary(LogicalOp op, llvm::Value* lhs, llvm::Value* rhs);
   llvm::Value* emitComparisonBinary(ComparisonOp op, llvm::Value* lhs, llvm::Value* rhs);
@@ -700,6 +701,11 @@ llvm::Value* CodeGenModule::Impl::emitCallExpr(const ast::CallExpr& expr) {
     args.push_back(value);
   }
   return builder.CreateCall(callee, args, expr.callee + ".call");
+}
+
+llvm::Value* CodeGenModule::Impl::emitArrayLiteral(const ast::ArrayLiteralExpr& expr) {
+  (void)expr;
+  return nullptr;
 }
 
 llvm::Value* CodeGenModule::Impl::emitArithmeticBinary(ArithmeticOp op, llvm::Value* lhs,

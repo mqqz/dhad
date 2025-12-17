@@ -7,11 +7,10 @@
 #include <string>
 #include <utility>
 
-#ifdef DHAD_GENERATED_PARSER_TABLE_HEADER
-#include DHAD_GENERATED_PARSER_TABLE_HEADER
-#else
-#include "generated/parser_tables.gen.hpp"
+#ifndef DHAD_GENERATED_PARSER_TABLE_HEADER
+#error "Parser tables header not defined. Ensure parser_tables_gen target runs before building."
 #endif
+#include DHAD_GENERATED_PARSER_TABLE_HEADER
 
 namespace dhad::parser {
 

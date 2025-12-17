@@ -8,7 +8,7 @@
 
 namespace dhad::typing {
 
-enum class TypeKind {
+enum class TypeKind : uint8_t {
   Int,
   Float,
   Bool,

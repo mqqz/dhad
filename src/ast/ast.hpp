@@ -15,48 +15,39 @@ class raw_ostream;
 
 namespace dhad::ast {
 
-struct Program;
-struct ImportDecl;
-struct FunctionDecl;
-struct Parameter;
-struct BlockStmt;
-struct DeclarationStmt;
-struct AssignmentStmt;
-struct IfStmt;
-struct WhileStmt;
-struct ForStmt;
-struct ReturnStmt;
-struct BreakStmt;
-struct ContinueStmt;
-struct ExpressionStmt;
-struct BinaryExpr;
-struct UnaryExpr;
-struct LiteralExpr;
-struct IdentifierExpr;
-struct CallExpr;
+#define DHAD_AST_FOR_EACH_CONCRETE_NODE(M)                                                         \
+  M(Program)                                                                                       \
+  M(ImportDecl)                                                                                    \
+  M(FunctionDecl)                                                                                  \
+  M(Parameter)                                                                                     \
+  M(BlockStmt)                                                                                     \
+  M(DeclarationStmt)                                                                               \
+  M(AssignmentStmt)                                                                                \
+  M(IfStmt)                                                                                        \
+  M(WhileStmt)                                                                                     \
+  M(ForStmt)                                                                                       \
+  M(ReturnStmt)                                                                                    \
+  M(BreakStmt)                                                                                     \
+  M(ContinueStmt)                                                                                  \
+  M(ExpressionStmt)                                                                                \
+  M(BinaryExpr)                                                                                    \
+  M(UnaryExpr)                                                                                     \
+  M(LiteralExpr)                                                                                   \
+  M(IdentifierExpr)                                                                                \
+  M(CallExpr)                                                                                      \
+  M(ArrayLiteralExpr)
+
+#define DHAD_AST_FWD_DECL(NodeName) struct NodeName;
+DHAD_AST_FOR_EACH_CONCRETE_NODE(DHAD_AST_FWD_DECL)
+#undef DHAD_AST_FWD_DECL
 
 class ASTVisitor {
 public:
   virtual ~ASTVisitor() = default;
-  virtual void visit(const Program&) {}
-  virtual void visit(const ImportDecl&) {}
-  virtual void visit(const FunctionDecl&) {}
-  virtual void visit(const Parameter&) {}
-  virtual void visit(const BlockStmt&) {}
-  virtual void visit(const DeclarationStmt&) {}
-  virtual void visit(const AssignmentStmt&) {}
-  virtual void visit(const IfStmt&) {}
-  virtual void visit(const WhileStmt&) {}
-  virtual void visit(const ForStmt&) {}
-  virtual void visit(const ReturnStmt&) {}
-  virtual void visit(const BreakStmt&) {}
-  virtual void visit(const ContinueStmt&) {}
-  virtual void visit(const ExpressionStmt&) {}
-  virtual void visit(const BinaryExpr&) {}
-  virtual void visit(const UnaryExpr&) {}
-  virtual void visit(const LiteralExpr&) {}
-  virtual void visit(const IdentifierExpr&) {}
-  virtual void visit(const CallExpr&) {}
+#define DHAD_AST_VISITOR_METHOD(NodeName)                                                          \
+  virtual void visit(const NodeName&) {}
+  DHAD_AST_FOR_EACH_CONCRETE_NODE(DHAD_AST_VISITOR_METHOD)
+#undef DHAD_AST_VISITOR_METHOD
 };
 
 using llvm::cast;
@@ -87,7 +78,8 @@ public:
     UnaryExpr,
     LiteralExpr,
     IdentifierExpr,
-    CallExpr
+    CallExpr,
+    ArrayLiteralExpr
   };
 
   virtual ~ASTNode();
@@ -109,6 +101,26 @@ private:
 };
 
 template <typename T> using NodePtr = std::unique_ptr<T>;
+
+// Provides classof/accept + kind-safe construction for derived nodes.
+template <typename Derived, ASTNode::Kind NodeKind, typename BaseT = ASTNode>
+struct NodeWithKind : BaseT {
+protected:
+private:
+  explicit NodeWithKind(SourceLocation loc) : BaseT(NodeKind, loc) {}
+
+protected:
+private:
+  NodeWithKind() : BaseT(NodeKind, SourceLocation{0, 0}) {}
+
+protected:
+public:
+  static bool classof(const ASTNode* node) { return node->getKind() == NodeKind; }
+  void accept(ASTVisitor& visitor) const override {
+    visitor.visit(static_cast<const Derived&>(*this));
+  }
+  friend Derived;
+};
 
 struct Statement : ASTNode {
   static bool classof(const ASTNode* node) {
@@ -136,6 +148,7 @@ struct Expression : Statement {
     case Kind::LiteralExpr:
     case Kind::IdentifierExpr:
     case Kind::CallExpr:
+    case Kind::ArrayLiteralExpr:
       return true;
     default:
       return false;
@@ -152,68 +165,54 @@ private:
   typing::TypePtr type_;
 };
 
-struct Program : ASTNode {
+struct Program : NodeWithKind<Program, ASTNode::Kind::Program> {
   std::vector<NodePtr<ASTNode>> topLevel;
 
   Program();
-  static bool classof(const ASTNode* node) { return node->getKind() == Kind::Program; }
-  void accept(ASTVisitor& visitor) const override { visitor.visit(*this); }
 };
 
-struct ImportDecl : ASTNode {
+struct ImportDecl : NodeWithKind<ImportDecl, ASTNode::Kind::ImportDecl> {
   std::string module;
 
   explicit ImportDecl(std::string moduleName, SourceLocation loc);
-  static bool classof(const ASTNode* node) { return node->getKind() == Kind::ImportDecl; }
-  void accept(ASTVisitor& visitor) const override { visitor.visit(*this); }
 };
 
-struct Parameter : ASTNode {
+struct Parameter : NodeWithKind<Parameter, ASTNode::Kind::Parameter> {
   std::string name;
   std::string typeName;
 
   Parameter(std::string name, std::string typeName, SourceLocation loc);
-  static bool classof(const ASTNode* node) { return node->getKind() == Kind::Parameter; }
-  void accept(ASTVisitor& visitor) const override { visitor.visit(*this); }
 };
 
-struct BlockStmt : Statement {
+struct BlockStmt : NodeWithKind<BlockStmt, ASTNode::Kind::BlockStmt, Statement> {
   std::vector<NodePtr<Statement>> statements;
 
   explicit BlockStmt(SourceLocation loc);
-  static bool classof(const ASTNode* node) { return node->getKind() == Kind::BlockStmt; }
-  void accept(ASTVisitor& visitor) const override { visitor.visit(*this); }
 };
 
-struct FunctionDecl : ASTNode {
+struct FunctionDecl : NodeWithKind<FunctionDecl, ASTNode::Kind::FunctionDecl> {
   std::string name;
   std::vector<NodePtr<Parameter>> params;
   std::optional<std::string> returnType;
   NodePtr<BlockStmt> body;
 
   FunctionDecl(std::string fnName, SourceLocation loc);
-  static bool classof(const ASTNode* node) { return node->getKind() == Kind::FunctionDecl; }
-  void accept(ASTVisitor& visitor) const override { visitor.visit(*this); }
 };
 
-struct DeclarationStmt : Statement {
+struct DeclarationStmt : NodeWithKind<DeclarationStmt, ASTNode::Kind::DeclarationStmt, Statement> {
   bool isConst{false};
   std::string name;
   std::optional<std::string> typeName;
   NodePtr<Expression> initializer;
 
   DeclarationStmt(bool isConst, std::string identifier, SourceLocation loc);
-  static bool classof(const ASTNode* node) { return node->getKind() == Kind::DeclarationStmt; }
-  void accept(ASTVisitor& visitor) const override { visitor.visit(*this); }
 };
 
-struct AssignmentStmt : Statement {
+struct AssignmentStmt : NodeWithKind<AssignmentStmt, ASTNode::Kind::AssignmentStmt, Statement> {
   std::string target;
   NodePtr<Expression> value;
 
   AssignmentStmt(std::string identifier, SourceLocation loc);
-  static bool classof(const ASTNode* node) { return node->getKind() == Kind::AssignmentStmt; }
-  void accept(ASTVisitor& visitor) const override { visitor.visit(*this); }
 };
 
 struct FlowStmt : Statement {
@@ -221,104 +220,87 @@ protected:
   FlowStmt(Kind kind, SourceLocation loc) : Statement(kind, loc) {}
 };
 
-struct IfStmt : FlowStmt {
+struct IfStmt : NodeWithKind<IfStmt, ASTNode::Kind::IfStmt, FlowStmt> {
   NodePtr<Expression> condition;
   NodePtr<Statement> thenBranch;
   NodePtr<Statement> elseBranch;
 
   explicit IfStmt(SourceLocation loc);
-  static bool classof(const ASTNode* node) { return node->getKind() == Kind::IfStmt; }
-  void accept(ASTVisitor& visitor) const override { visitor.visit(*this); }
 };
 
-struct WhileStmt : FlowStmt {
+struct WhileStmt : NodeWithKind<WhileStmt, ASTNode::Kind::WhileStmt, FlowStmt> {
   NodePtr<Expression> condition;
   NodePtr<Statement> body;
 
   explicit WhileStmt(SourceLocation loc);
-  static bool classof(const ASTNode* node) { return node->getKind() == Kind::WhileStmt; }
-  void accept(ASTVisitor& visitor) const override { visitor.visit(*this); }
 };
 
-struct ForStmt : FlowStmt {
+struct ForStmt : NodeWithKind<ForStmt, ASTNode::Kind::ForStmt, FlowStmt> {
   NodePtr<Expression> condition;
   NodePtr<Statement> body;
 
   explicit ForStmt(SourceLocation loc);
-  static bool classof(const ASTNode* node) { return node->getKind() == Kind::ForStmt; }
-  void accept(ASTVisitor& visitor) const override { visitor.visit(*this); }
 };
 
-struct ReturnStmt : FlowStmt {
+struct ReturnStmt : NodeWithKind<ReturnStmt, ASTNode::Kind::ReturnStmt, FlowStmt> {
   NodePtr<Expression> value;
 
   explicit ReturnStmt(SourceLocation loc);
-  static bool classof(const ASTNode* node) { return node->getKind() == Kind::ReturnStmt; }
-  void accept(ASTVisitor& visitor) const override { visitor.visit(*this); }
 };
 
-struct BreakStmt : FlowStmt {
+struct BreakStmt : NodeWithKind<BreakStmt, ASTNode::Kind::BreakStmt, FlowStmt> {
   explicit BreakStmt(SourceLocation loc);
-  static bool classof(const ASTNode* node) { return node->getKind() == Kind::BreakStmt; }
-  void accept(ASTVisitor& visitor) const override { visitor.visit(*this); }
 };
 
-struct ContinueStmt : FlowStmt {
+struct ContinueStmt : NodeWithKind<ContinueStmt, ASTNode::Kind::ContinueStmt, FlowStmt> {
   explicit ContinueStmt(SourceLocation loc);
-  static bool classof(const ASTNode* node) { return node->getKind() == Kind::ContinueStmt; }
-  void accept(ASTVisitor& visitor) const override { visitor.visit(*this); }
 };
 
-struct ExpressionStmt : Statement {
+struct ExpressionStmt : NodeWithKind<ExpressionStmt, ASTNode::Kind::ExpressionStmt, Statement> {
   NodePtr<Expression> expr;
 
   explicit ExpressionStmt(SourceLocation loc);
-  static bool classof(const ASTNode* node) { return node->getKind() == Kind::ExpressionStmt; }
-  void accept(ASTVisitor& visitor) const override { visitor.visit(*this); }
 };
 
-struct BinaryExpr : Expression {
+struct BinaryExpr : NodeWithKind<BinaryExpr, ASTNode::Kind::BinaryExpr, Expression> {
   std::string op;
   NodePtr<Expression> lhs;
   NodePtr<Expression> rhs;
 
   BinaryExpr(std::string op, SourceLocation loc);
-  static bool classof(const ASTNode* node) { return node->getKind() == Kind::BinaryExpr; }
-  void accept(ASTVisitor& visitor) const override { visitor.visit(*this); }
 };
 
-struct UnaryExpr : Expression {
+struct UnaryExpr : NodeWithKind<UnaryExpr, ASTNode::Kind::UnaryExpr, Expression> {
   std::string op;
   NodePtr<Expression> operand;
 
   UnaryExpr(std::string op, SourceLocation loc);
-  static bool classof(const ASTNode* node) { return node->getKind() == Kind::UnaryExpr; }
-  void accept(ASTVisitor& visitor) const override { visitor.visit(*this); }
 };
 
-struct LiteralExpr : Expression {
+struct LiteralExpr : NodeWithKind<LiteralExpr, ASTNode::Kind::LiteralExpr, Expression> {
   std::string value;
 
   LiteralExpr(std::string literal, SourceLocation loc);
-  static bool classof(const ASTNode* node) { return node->getKind() == Kind::LiteralExpr; }
-  void accept(ASTVisitor& visitor) const override { visitor.visit(*this); }
 };
 
-struct IdentifierExpr : Expression {
+struct IdentifierExpr : NodeWithKind<IdentifierExpr, ASTNode::Kind::IdentifierExpr, Expression> {
   std::string name;
 
   IdentifierExpr(std::string identifier, SourceLocation loc);
-  static bool classof(const ASTNode* node) { return node->getKind() == Kind::IdentifierExpr; }
-  void accept(ASTVisitor& visitor) const override { visitor.visit(*this); }
 };
 
-struct CallExpr : Expression {
+struct CallExpr : NodeWithKind<CallExpr, ASTNode::Kind::CallExpr, Expression> {
   std::string callee;
   std::vector<NodePtr<Expression>> args;
 
   CallExpr(std::string callee, SourceLocation loc);
-  static bool classof(const ASTNode* node) { return node->getKind() == Kind::CallExpr; }
-  void accept(ASTVisitor& visitor) const override { visitor.visit(*this); }
+};
+
+struct ArrayLiteralExpr
+    : NodeWithKind<ArrayLiteralExpr, ASTNode::Kind::ArrayLiteralExpr, Expression> {
+  std::vector<NodePtr<Expression>> elements;
+
+  explicit ArrayLiteralExpr(SourceLocation loc);
 };
 
 } // namespace dhad::ast

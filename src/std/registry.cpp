@@ -21,7 +21,7 @@ public:
   StdSignatureBuilder() = default;
 
   TypePtr primitive(TypeKind kind) {
-    const std::size_t index = static_cast<std::size_t>(kind);
+    const auto index = static_cast<std::size_t>(kind);
     auto& slot = cache_[index];
     if (!slot) {
       slot = dhad::typing::makePrimitive(kind);
@@ -33,8 +33,8 @@ public:
   TypePtr stringType() { return primitive(TypeKind::String); }
   TypePtr nullType() { return primitive(TypeKind::Null); }
 
-  TypePtr array(TypePtr element) { return dhad::typing::makeArray(std::move(element)); }
-  TypePtr function(std::vector<TypePtr> params, TypePtr result) {
+  static TypePtr array(TypePtr element) { return dhad::typing::makeArray(std::move(element)); }
+  static TypePtr function(std::vector<TypePtr> params, TypePtr result) {
     return dhad::typing::makeFunction(std::move(params), std::move(result));
   }
 
@@ -44,15 +44,17 @@ private:
 };
 
 TypePtr buildPrintSignature(StdSignatureBuilder& builder) {
-  return builder.function({builder.stringType()}, builder.intType());
+  return dhad::stdlib::StdSignatureBuilder::function({builder.stringType()}, builder.intType());
 }
 
 TypePtr buildArrayCreateSignature(StdSignatureBuilder& builder) {
-  return builder.function({builder.intType()}, builder.array(builder.nullType()));
+  return dhad::stdlib::StdSignatureBuilder::function(
+      {builder.intType()}, dhad::stdlib::StdSignatureBuilder::array(builder.nullType()));
 }
 
 TypePtr buildArrayLengthSignature(StdSignatureBuilder& builder) {
-  return builder.function({builder.array(builder.nullType())}, builder.intType());
+  return dhad::stdlib::StdSignatureBuilder::function(
+      {dhad::stdlib::StdSignatureBuilder::array(builder.nullType())}, builder.intType());
 }
 
 struct BuiltinDef {
