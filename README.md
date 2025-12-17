@@ -31,7 +31,7 @@ The language uses a handwritten LALR(1) parser and an LLVM backend (so hopefully
    ```
 5. **Try the hello world example**
    ```bash
-   ./build/dhad examples/hello-world.dhad -o hello
+   ./build/dhad examples/hello-world.dh -o hello
    ./hello
    ```
 
