@@ -3,7 +3,7 @@ CMAKE ?= cmake
 PYTHON ?= python3
 VENV_DIR ?= .venv
 REQ_FILE ?= requirements.txt
-CLANG_FORMAT ?= clang-format-20
+CLANG_FORMAT ?= clang-format
 FORMAT_DIRS ?= src tests
 
 ifeq ($(OS),Windows_NT)

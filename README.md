@@ -11,8 +11,8 @@ The language uses a handwritten LALR(1) parser and an LLVM backend (so hopefully
 1. **Install prerequisites**
 
    - CMake 3.22 or newer
-   - LLVM (20 is recommended; any version >= 17 works)
-   - Clang/Clang++ toolchain and `clang-format-20`
+   - LLVM (version >= 17)
+   - Clang/Clang++ toolchain (incl. `clang-format`)
    - Python 3.10 or newer
 
 2. **Clone and configure**
@@ -42,7 +42,6 @@ The language uses a handwritten LALR(1) parser and an LLVM backend (so hopefully
 - The parser/generator infrastructure relies on Python scripts in `tools/`.
   Regenerate tables with `cmake --build build --target parser_tables_gen` if you
   edit the grammar.
-- `make format` runs `clang-format-20` over `src/` and `tests/`.
+- `make format` runs `clang-format` over `src/` and `tests/`.
 
-Contributions are welcome, just be aware that the design is changing quickly and I am still figuring out the fundamentals. Tune in via issues/PRs if you want to help
-shape the language.
+Contributions are welcome, just be aware that the design is changing quickly and I am still figuring out the fundamentals. Tune in via issues/PRs if you want to help shape the language.
