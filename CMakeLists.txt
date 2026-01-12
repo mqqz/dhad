@@ -238,6 +238,16 @@ if(BUILD_TESTING)
             --lli "${LLVM_TOOLS_BINARY_DIR}/lli")
 
   add_test(
+    NAME float_runtime
+    COMMAND "${DHAD_TEST_PYTHON}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_codegen_tests.py"
+            --codegen "$<TARGET_FILE:codegen_ex1>"
+            --example "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/float_runtime.dh"
+            --opt "${LLVM_TOOLS_BINARY_DIR}/opt"
+            --lli "${LLVM_TOOLS_BINARY_DIR}/lli"
+            --expected "ok\n")
+
+  add_test(
     NAME break_continue_outside_loop
     COMMAND
       "${DHAD_TEST_PYTHON}"
@@ -283,4 +293,15 @@ if(BUILD_TESTING)
       --case
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/import_missing.dh"
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/import_missing.txt")
+
+  add_test(
+    NAME float_ops_codegen
+    COMMAND
+      "${DHAD_TEST_PYTHON}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_dhad_ir_tests.py"
+      --driver
+      "$<TARGET_FILE:dhad>"
+      --case
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/float_ops.dh"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/float_ir_contains.txt")
 endif()

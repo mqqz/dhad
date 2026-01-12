@@ -170,6 +170,8 @@ private:
   llvm::Value* convertToType(llvm::Value* value, llvm::Type* type);
   llvm::Value* ensureBoolean(llvm::Value* value);
   llvm::Value* ensureInteger(llvm::Value* value);
+  llvm::Value* ensureFloat(llvm::Value* value);
+  bool promoteNumericOperands(llvm::Value*& lhs, llvm::Value*& rhs, bool& useFloat);
 
   std::string moduleName;
   llvm::LLVMContext context;
@@ -292,6 +294,15 @@ llvm::Value* CodeGenModule::Impl::convertToType(llvm::Value* value, llvm::Type* 
   if (value->getType() == type) {
     return value;
   }
+  if (value->getType()->isFloatingPointTy() && type->isFloatingPointTy()) {
+    return builder.CreateFPCast(value, type, "fpcast");
+  }
+  if (value->getType()->isFloatingPointTy() && type->isIntegerTy()) {
+    return builder.CreateFPToSI(value, type, "fptosi");
+  }
+  if (value->getType()->isIntegerTy() && type->isFloatingPointTy()) {
+    return builder.CreateSIToFP(value, type, "sitofp");
+  }
   if (value->getType()->isIntegerTy(1) && type->isIntegerTy(32)) {
     return builder.CreateZExt(value, type, "booltoint");
   }
@@ -330,7 +341,41 @@ llvm::Value* CodeGenModule::Impl::ensureInteger(llvm::Value* value) {
   if (value->getType()->isIntegerTy(1)) {
     return builder.CreateZExt(value, builder.getInt32Ty(), "booltoint");
   }
+  if (value->getType()->isIntegerTy()) {
+    return builder.CreateIntCast(value, builder.getInt32Ty(), true, "intcast");
+  }
   return nullptr;
+}
+
+llvm::Value* CodeGenModule::Impl::ensureFloat(llvm::Value* value) {
+  if (!value) {
+    return nullptr;
+  }
+  if (value->getType()->isFloatingPointTy()) {
+    return value;
+  }
+  if (value->getType()->isIntegerTy()) {
+    return builder.CreateSIToFP(value, builder.getFloatTy(), "sitofp");
+  }
+  return nullptr;
+}
+
+bool CodeGenModule::Impl::promoteNumericOperands(llvm::Value*& lhs, llvm::Value*& rhs,
+                                                 bool& useFloat) {
+  if (!lhs || !rhs) {
+    return false;
+  }
+  const bool lhsFloat = lhs->getType()->isFloatingPointTy();
+  const bool rhsFloat = rhs->getType()->isFloatingPointTy();
+  useFloat = lhsFloat || rhsFloat;
+  if (useFloat) {
+    lhs = ensureFloat(lhs);
+    rhs = ensureFloat(rhs);
+  } else {
+    lhs = ensureInteger(lhs);
+    rhs = ensureInteger(rhs);
+  }
+  return lhs && rhs;
 }
 
 bool CodeGenModule::Impl::declareFunction(const ast::FunctionDecl& fn) {
@@ -712,20 +757,23 @@ llvm::Value* CodeGenModule::Impl::emitArrayLiteral(const ast::ArrayLiteralExpr& 
 
 llvm::Value* CodeGenModule::Impl::emitArithmeticBinary(ArithmeticOp op, llvm::Value* lhs,
                                                        llvm::Value* rhs) {
-  lhs = ensureInteger(lhs);
-  rhs = ensureInteger(rhs);
-  if (!lhs || !rhs) {
+  bool useFloat = false;
+  if (!promoteNumericOperands(lhs, rhs, useFloat)) {
     return nullptr;
   }
   switch (op) {
   case ArithmeticOp::Add:
-    return builder.CreateAdd(lhs, rhs, "addtmp");
+    return useFloat ? builder.CreateFAdd(lhs, rhs, "faddtmp")
+                    : builder.CreateAdd(lhs, rhs, "addtmp");
   case ArithmeticOp::Sub:
-    return builder.CreateSub(lhs, rhs, "subtmp");
+    return useFloat ? builder.CreateFSub(lhs, rhs, "fsubtmp")
+                    : builder.CreateSub(lhs, rhs, "subtmp");
   case ArithmeticOp::Mul:
-    return builder.CreateMul(lhs, rhs, "multmp");
+    return useFloat ? builder.CreateFMul(lhs, rhs, "fmultmp")
+                    : builder.CreateMul(lhs, rhs, "multmp");
   case ArithmeticOp::Div:
-    return builder.CreateSDiv(lhs, rhs, "divtmp");
+    return useFloat ? builder.CreateFDiv(lhs, rhs, "fdivtmp")
+                    : builder.CreateSDiv(lhs, rhs, "divtmp");
   }
   return nullptr;
 }
@@ -748,24 +796,29 @@ llvm::Value* CodeGenModule::Impl::emitLogicalBinary(LogicalOp op, llvm::Value* l
 
 llvm::Value* CodeGenModule::Impl::emitComparisonBinary(ComparisonOp op, llvm::Value* lhs,
                                                        llvm::Value* rhs) {
-  lhs = ensureInteger(lhs);
-  rhs = ensureInteger(rhs);
-  if (!lhs || !rhs) {
+  bool useFloat = false;
+  if (!promoteNumericOperands(lhs, rhs, useFloat)) {
     return nullptr;
   }
   switch (op) {
   case ComparisonOp::Eq:
-    return builder.CreateICmpEQ(lhs, rhs, "eqtmp");
+    return useFloat ? builder.CreateFCmpOEQ(lhs, rhs, "feqtmp")
+                    : builder.CreateICmpEQ(lhs, rhs, "eqtmp");
   case ComparisonOp::Ne:
-    return builder.CreateICmpNE(lhs, rhs, "netmp");
+    return useFloat ? builder.CreateFCmpONE(lhs, rhs, "fnetmp")
+                    : builder.CreateICmpNE(lhs, rhs, "netmp");
   case ComparisonOp::Lt:
-    return builder.CreateICmpSLT(lhs, rhs, "lttmp");
+    return useFloat ? builder.CreateFCmpOLT(lhs, rhs, "flttmp")
+                    : builder.CreateICmpSLT(lhs, rhs, "lttmp");
   case ComparisonOp::Le:
-    return builder.CreateICmpSLE(lhs, rhs, "letmp");
+    return useFloat ? builder.CreateFCmpOLE(lhs, rhs, "fletmp")
+                    : builder.CreateICmpSLE(lhs, rhs, "letmp");
   case ComparisonOp::Gt:
-    return builder.CreateICmpSGT(lhs, rhs, "gttmp");
+    return useFloat ? builder.CreateFCmpOGT(lhs, rhs, "fgttmp")
+                    : builder.CreateICmpSGT(lhs, rhs, "gttmp");
   case ComparisonOp::Ge:
-    return builder.CreateICmpSGE(lhs, rhs, "getmp");
+    return useFloat ? builder.CreateFCmpOGE(lhs, rhs, "fgetmp")
+                    : builder.CreateICmpSGE(lhs, rhs, "getmp");
   }
   return nullptr;
 }
