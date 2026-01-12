@@ -48,6 +48,8 @@ private:
   bool checkFor(ast::ForStmt& stmt);
   bool checkReturn(ast::ReturnStmt& stmt);
   bool checkExpressionStmt(ast::ExpressionStmt& stmt);
+  bool statementAlwaysReturns(ast::Statement& stmt);
+  bool blockAlwaysReturns(ast::BlockStmt& block);
 
   TypePtr checkExpression(ast::Expression& expr);
   TypePtr checkBinary(ast::BinaryExpr& expr);

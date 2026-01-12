@@ -250,4 +250,15 @@ if(BUILD_TESTING)
       --case
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/continue_outside_loop.dh"
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/continue_outside_loop.txt")
+
+  add_test(
+    NAME missing_return
+    COMMAND
+      "${DHAD_TEST_PYTHON}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_dhad_tests.py"
+      --driver
+      "$<TARGET_FILE:dhad>"
+      --case
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/missing_return.dh"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/missing_return.txt")
 endif()

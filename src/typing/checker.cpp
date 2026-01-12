@@ -108,6 +108,12 @@ bool TypeChecker::checkFunction(ast::FunctionDecl& fn) {
   }
 
   bool ok = fn.body ? checkBlock(*fn.body) : true;
+  if (ok && fn.body && currentReturnType_ && currentReturnType_->kind != TypeKind::Null) {
+    if (!blockAlwaysReturns(*fn.body)) {
+      reportError(fn.getLocation(), "Missing return in non-void function");
+      ok = false;
+    }
+  }
   scopes_.exitScope();
   return ok;
 }
@@ -245,6 +251,32 @@ bool TypeChecker::checkExpressionStmt(ast::ExpressionStmt& stmt) {
   }
   (void)checkExpression(*stmt.expr);
   return true;
+}
+
+bool TypeChecker::statementAlwaysReturns(ast::Statement& stmt) {
+  if (llvm::isa<ast::ReturnStmt>(stmt)) {
+    return true;
+  }
+  if (auto* block = llvm::dyn_cast<ast::BlockStmt>(&stmt)) {
+    return blockAlwaysReturns(*block);
+  }
+  if (auto* ifStmt = llvm::dyn_cast<ast::IfStmt>(&stmt)) {
+    if (!ifStmt->thenBranch || !ifStmt->elseBranch) {
+      return false;
+    }
+    return statementAlwaysReturns(*ifStmt->thenBranch) &&
+           statementAlwaysReturns(*ifStmt->elseBranch);
+  }
+  return false;
+}
+
+bool TypeChecker::blockAlwaysReturns(ast::BlockStmt& block) {
+  for (auto& stmt : block.statements) {
+    if (statementAlwaysReturns(*stmt)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 TypePtr TypeChecker::checkExpression(ast::Expression& expr) {
