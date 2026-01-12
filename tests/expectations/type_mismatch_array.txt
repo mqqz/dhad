@@ -1,0 +1,1 @@
+tests/sources/type_mismatch_array.dh:2:19: error: Type mismatch for initializer: expected 6 but got 0

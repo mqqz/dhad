@@ -63,7 +63,7 @@ private:
   bool expectAssignable(const SourceLocation& loc, const TypePtr& target, const TypePtr& value,
                         std::string_view context);
 
-  TypePtr resolveTypeName(const std::string& name);
+  TypePtr resolveTypeExpr(const ast::TypeExpr* type);
   [[nodiscard]] bool typeEquals(const TypePtr& lhs, const TypePtr& rhs) const;
   [[nodiscard]] bool isNumericKind(TypeKind kind) const;
   [[nodiscard]] bool isArithmeticOperandKind(TypeKind kind) const;

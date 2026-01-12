@@ -10,6 +10,42 @@ namespace {
 
 using SV = SemanticValue;
 using namespace dhad::ast::build;
+using TypeExprPtr = SV::TypeExprPtr;
+
+typing::TypeKind tokenToTypeKind(const Token& tok) {
+  switch (tok.kind) {
+  case TokenType::KW_INT:
+    return typing::TypeKind::Int;
+  case TokenType::KW_FLOAT:
+    return typing::TypeKind::Float;
+  case TokenType::KW_BOOL:
+    return typing::TypeKind::Bool;
+  case TokenType::KW_CHAR:
+    return typing::TypeKind::Char;
+  case TokenType::KW_STRING:
+    return typing::TypeKind::String;
+  case TokenType::KW_NULL:
+    return typing::TypeKind::Null;
+  default:
+    return typing::TypeKind::Null;
+  }
+}
+
+TypeExprPtr appendSumVariant(TypeExprPtr sum, TypeExprPtr variant, SourceLocation loc) {
+  if (!sum) {
+    auto node = std::make_unique<ast::TypeSumExpr>(loc);
+    node->variants.push_back(std::move(variant));
+    return node;
+  }
+  if (auto* sumNode = llvm::dyn_cast<ast::TypeSumExpr>(sum.get())) {
+    sumNode->variants.push_back(std::move(variant));
+    return sum;
+  }
+  auto node = std::make_unique<ast::TypeSumExpr>(loc);
+  node->variants.push_back(std::move(sum));
+  node->variants.push_back(std::move(variant));
+  return node;
+}
 
 struct ReductionContext {
   std::vector<SemanticValue> values;
@@ -106,7 +142,7 @@ SemanticValue actionFunctionDecl(ReductionContext& ctx) {
   (void)ctx.take<Token>(2);
   auto params = ctx.take<SV::ParameterList>(3);
   (void)ctx.take<Token>(4);
-  auto retType = ctx.take<std::optional<std::string>>(5);
+  auto retType = ctx.take<TypeExprPtr>(5);
   auto body = ctx.take<SV::BlockPtr>(6);
   auto fn = std::make_unique<ast::FunctionDecl>(tokenLexeme(nameTok), fnTok.loc);
   fn->params = std::move(params);
@@ -117,12 +153,12 @@ SemanticValue actionFunctionDecl(ReductionContext& ctx) {
 
 SemanticValue actionFunctionReturnTypeSome(ReductionContext& ctx) {
   (void)ctx.take<Token>(0);
-  auto typeName = ctx.take<std::string>(1);
-  return SemanticValue(std::optional<std::string>{std::move(typeName)});
+  auto typeName = ctx.take<TypeExprPtr>(1);
+  return SemanticValue(std::move(typeName));
 }
 
 SemanticValue actionFunctionReturnTypeNone(ReductionContext&) {
-  return SemanticValue(std::optional<std::string>{});
+  return SemanticValue(TypeExprPtr{});
 }
 
 SemanticValue actionParameterListSome(ReductionContext& ctx) {
@@ -163,7 +199,7 @@ SemanticValue actionParameterTailEmpty(ReductionContext&) {
 SemanticValue actionParameterDecl(ReductionContext& ctx) {
   auto nameTok = ctx.take<Token>(0);
   (void)ctx.take<Token>(1);
-  auto typeName = ctx.take<std::string>(2);
+  auto typeName = ctx.take<TypeExprPtr>(2);
   auto param =
       std::make_unique<ast::Parameter>(tokenLexeme(nameTok), std::move(typeName), nameTok.loc);
   return SemanticValue(SV::ParameterPtr(std::move(param)));
@@ -171,7 +207,8 @@ SemanticValue actionParameterDecl(ReductionContext& ctx) {
 
 SemanticValue actionTypeNameKeyword(ReductionContext& ctx) {
   auto tok = ctx.take<Token>(0);
-  return SemanticValue(tokenText(tok));
+  auto type = std::make_unique<ast::TypePrimitiveExpr>(tokenToTypeKind(tok), tok.loc);
+  return SemanticValue(TypeExprPtr(std::move(type)));
 }
 
 SemanticValue actionBlockBuild(ReductionContext& ctx) {
@@ -231,7 +268,7 @@ SemanticValue actionBlockStatement(ReductionContext& ctx) {
 SemanticValue actionDeclarationStmt(ReductionContext& ctx) {
   auto keyword = ctx.take<Token>(0);
   auto ident = ctx.take<Token>(1);
-  auto typeOpt = ctx.take<std::optional<std::string>>(2);
+  auto typeOpt = ctx.take<TypeExprPtr>(2);
   (void)ctx.take<Token>(3);
   auto expr = ctx.take<SV::ExpressionPtr>(4);
   auto decl = std::make_unique<ast::DeclarationStmt>(keyword.kind == TokenType::KW_CONST,
@@ -243,60 +280,76 @@ SemanticValue actionDeclarationStmt(ReductionContext& ctx) {
 
 SemanticValue actionTypeAnnotationSome(ReductionContext& ctx) {
   (void)ctx.take<Token>(0);
-  auto typeName = ctx.take<std::string>(1);
-  return SemanticValue(std::optional<std::string>{std::move(typeName)});
+  auto typeName = ctx.take<TypeExprPtr>(1);
+  return SemanticValue(std::move(typeName));
 }
 
 SemanticValue actionTypeAnnotationNone(ReductionContext&) {
-  return SemanticValue(std::optional<std::string>{});
+  return SemanticValue(TypeExprPtr{});
 }
 
 SemanticValue actionTypeNameUnion(ReductionContext& ctx) {
-  auto lhs = ctx.take<std::string>(0);
-  (void)ctx.take<Token>(1);
-  auto rhs = ctx.take<std::string>(2);
-  if (!lhs.empty()) {
-    lhs.push_back('|');
-  }
-  lhs += rhs;
-  return SemanticValue(std::move(lhs));
+  auto lhs = ctx.take<TypeExprPtr>(0);
+  auto pipeTok = ctx.take<Token>(1);
+  auto rhs = ctx.take<TypeExprPtr>(2);
+  auto sum = appendSumVariant(std::move(lhs), std::move(rhs), pipeTok.loc);
+  return SemanticValue(std::move(sum));
 }
 
-SemanticValue actionTypeNameFromProduct(ReductionContext& ctx) {
-  return SemanticValue(ctx.take<std::string>(0));
-}
-
-SemanticValue actionTypeProductCombine(ReductionContext& ctx) {
-  auto lhs = ctx.take<std::string>(0);
-  (void)ctx.take<Token>(1);
-  auto rhs = ctx.take<std::string>(2);
-  if (!lhs.empty()) {
-    lhs.push_back('*');
-  }
-  lhs += rhs;
-  return SemanticValue(std::move(lhs));
-}
-
-SemanticValue actionTypeProductFromPrimary(ReductionContext& ctx) {
-  return SemanticValue(ctx.take<std::string>(0));
+SemanticValue actionTypeNameFromPrimary(ReductionContext& ctx) {
+  return SemanticValue(ctx.take<TypeExprPtr>(0));
 }
 
 SemanticValue actionTypePrimaryArray(ReductionContext& ctx) {
   auto lbracket = ctx.take<Token>(0);
-  auto inner = ctx.take<std::string>(1);
+  auto inner = ctx.take<TypeExprPtr>(1);
   (void)ctx.take<Token>(2);
-  std::string result = "[" + inner + "]";
-  if (result.empty()) {
-    result = tokenLexeme(lbracket);
-  }
-  return SemanticValue(std::move(result));
+  auto type = std::make_unique<ast::TypeArrayExpr>(lbracket.loc);
+  type->element = std::move(inner);
+  return SemanticValue(TypeExprPtr(std::move(type)));
+}
+
+SemanticValue actionTypePrimaryTuple(ReductionContext& ctx) {
+  return SemanticValue(ctx.take<TypeExprPtr>(0));
 }
 
 SemanticValue actionTypePrimaryGrouped(ReductionContext& ctx) {
   (void)ctx.take<Token>(0);
-  auto inner = ctx.take<std::string>(1);
+  auto inner = ctx.take<TypeExprPtr>(1);
   (void)ctx.take<Token>(2);
   return SemanticValue(std::move(inner));
+}
+
+SemanticValue actionTypeTupleBuild(ReductionContext& ctx) {
+  auto lparen = ctx.take<Token>(0);
+  auto first = ctx.take<TypeExprPtr>(1);
+  (void)ctx.take<Token>(2);
+  auto second = ctx.take<TypeExprPtr>(3);
+  auto tail = ctx.take<SV::TypeExprList>(4);
+  (void)ctx.take<Token>(5);
+  auto type = std::make_unique<ast::TypeProductExpr>(lparen.loc);
+  type->members.push_back(std::move(first));
+  type->members.push_back(std::move(second));
+  for (auto& entry : tail) {
+    type->members.push_back(std::move(entry));
+  }
+  return SemanticValue(TypeExprPtr(std::move(type)));
+}
+
+SemanticValue actionTypeTupleTailAppend(ReductionContext& ctx) {
+  (void)ctx.take<Token>(0);
+  auto type = ctx.take<TypeExprPtr>(1);
+  auto tail = ctx.take<SV::TypeExprList>(2);
+  SV::TypeExprList list;
+  list.push_back(std::move(type));
+  for (auto& entry : tail) {
+    list.push_back(std::move(entry));
+  }
+  return SemanticValue(std::move(list));
+}
+
+SemanticValue actionTypeTupleTailEmpty(ReductionContext&) {
+  return SemanticValue(SV::TypeExprList{});
 }
 
 SemanticValue actionAssignmentStmt(ReductionContext& ctx) {

@@ -304,4 +304,32 @@ if(BUILD_TESTING)
       --case
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/float_ops.dh"
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/float_ir_contains.txt")
+
+  add_test(
+    NAME composite_type_mismatch
+    COMMAND
+      "${DHAD_TEST_PYTHON}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_dhad_tests.py"
+      --driver
+      "$<TARGET_FILE:dhad>"
+      --case
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/type_mismatch_sum.dh"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/type_mismatch_sum.txt"
+      --case
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/type_mismatch_product.dh"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/type_mismatch_product.txt"
+      --case
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/type_mismatch_array.dh"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/type_mismatch_array.txt")
+
+  add_test(
+    NAME composite_codegen
+    COMMAND
+      "${DHAD_TEST_PYTHON}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_dhad_ir_tests.py"
+      --driver
+      "$<TARGET_FILE:dhad>"
+      --case
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/composite_codegen.dh"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/composite_ir_contains.txt")
 endif()

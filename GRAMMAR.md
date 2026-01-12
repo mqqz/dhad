@@ -19,12 +19,18 @@ parameters ::= parameter { "," parameter } ;
 parameter  ::= identifier ":" type ;
 
 Types
-type ::= KW_INT
-       | KW_FLOAT
-       | KW_BOOL
-       | KW_CHAR
-       | KW_STRING
-       | KW_NULL ;
+type ::= type "|" type_primary
+       | type_primary ;
+
+type_primary ::= KW_INT
+               | KW_FLOAT
+               | KW_BOOL
+               | KW_CHAR
+               | KW_STRING
+               | KW_NULL
+               | "[" type "]"
+               | "(" type ")"
+               | "(" type "،" type { "،" type } ")" ;
 
 Block
 block ::= "{" { statement } "}" ;
@@ -121,4 +127,3 @@ primary ::= number
 identifier ::= LETTER { LETTER | DIGIT | "_" } ;
 number ::= DIGIT { DIGIT } ;
 string ::= '"' { ANY_CHAR - '"' } '"' ;
-

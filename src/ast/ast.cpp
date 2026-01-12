@@ -6,6 +6,32 @@ namespace dhad::ast {
 
 namespace {
 
+const char* typeKindName(typing::TypeKind kind) {
+  switch (kind) {
+  case typing::TypeKind::Int:
+    return "int";
+  case typing::TypeKind::Float:
+    return "float";
+  case typing::TypeKind::Bool:
+    return "bool";
+  case typing::TypeKind::Char:
+    return "char";
+  case typing::TypeKind::String:
+    return "string";
+  case typing::TypeKind::Null:
+    return "null";
+  case typing::TypeKind::Array:
+    return "array";
+  case typing::TypeKind::Sum:
+    return "sum";
+  case typing::TypeKind::Product:
+    return "product";
+  case typing::TypeKind::Function:
+    return "function";
+  }
+  return "unknown";
+}
+
 class DumpVisitor : public ASTVisitor {
 public:
   DumpVisitor(llvm::raw_ostream& os, unsigned indent) : os(os), currentIndent(indent) {}
@@ -24,17 +50,28 @@ public:
   void visit(const FunctionDecl& node) override {
     indent();
     os << "FunctionDecl " << node.name;
-    if (node.returnType) os << " -> " << *node.returnType;
     os << '\n';
+    if (node.returnType) {
+      indent();
+      os << "ReturnType:\n";
+      {
+        IndentGuard guard(*this);
+        node.returnType->accept(*this);
+      }
+    }
     visitNodeVec(node.params, "Parameters");
     visitNode(node.body, "Body");
   }
 
   void visit(const Parameter& node) override {
     indent();
-    os << "Parameter " << node.name;
-    if (!node.typeName.empty()) os << ": " << node.typeName;
-    os << '\n';
+    os << "Parameter " << node.name << '\n';
+    if (node.type) {
+      indent();
+      os << "Type:\n";
+      IndentGuard guard(*this);
+      node.type->accept(*this);
+    }
   }
 
   void visit(const BlockStmt& node) override {
@@ -45,9 +82,13 @@ public:
 
   void visit(const DeclarationStmt& node) override {
     indent();
-    os << (node.isConst ? "ConstDecl " : "VarDecl ") << node.name;
-    if (node.typeName) os << ": " << *node.typeName;
-    os << '\n';
+    os << (node.isConst ? "ConstDecl " : "VarDecl ") << node.name << '\n';
+    if (node.typeName) {
+      indent();
+      os << "Type:\n";
+      IndentGuard guard(*this);
+      node.typeName->accept(*this);
+    }
     visitNode(node.initializer, "Initializer");
   }
 
@@ -136,6 +177,29 @@ public:
     visitNodeVec(node.elements, "Elements");
   }
 
+  void visit(const TypePrimitiveExpr& node) override {
+    indent();
+    os << "TypePrimitive " << typeKindName(node.kind) << '\n';
+  }
+
+  void visit(const TypeArrayExpr& node) override {
+    indent();
+    os << "TypeArray\n";
+    visitNode(node.element, "Element");
+  }
+
+  void visit(const TypeSumExpr& node) override {
+    indent();
+    os << "TypeSum\n";
+    visitNodeVec(node.variants, "Variants");
+  }
+
+  void visit(const TypeProductExpr& node) override {
+    indent();
+    os << "TypeProduct\n";
+    visitNodeVec(node.members, "Members");
+  }
+
 private:
   llvm::raw_ostream& os;
   unsigned currentIndent;
@@ -211,6 +275,16 @@ const char* ASTNode::kindName(Kind kind) {
     return "ContinueStmt";
   case Kind::ExpressionStmt:
     return "ExpressionStmt";
+  case Kind::TypeExpr:
+    return "TypeExpr";
+  case Kind::TypePrimitiveExpr:
+    return "TypePrimitiveExpr";
+  case Kind::TypeArrayExpr:
+    return "TypeArrayExpr";
+  case Kind::TypeSumExpr:
+    return "TypeSumExpr";
+  case Kind::TypeProductExpr:
+    return "TypeProductExpr";
   case Kind::Expression:
     return "Expression";
   case Kind::BinaryExpr:
@@ -244,9 +318,9 @@ Program::Program() : NodeWithKind<Program, ASTNode::Kind::Program>(SourceLocatio
 ImportDecl::ImportDecl(std::string moduleName, SourceLocation loc)
     : NodeWithKind<ImportDecl, ASTNode::Kind::ImportDecl>(loc), module(std::move(moduleName)) {}
 
-Parameter::Parameter(std::string name, std::string typeName, SourceLocation loc)
+Parameter::Parameter(std::string name, NodePtr<TypeExpr> type, SourceLocation loc)
     : NodeWithKind<Parameter, ASTNode::Kind::Parameter>(loc), name(std::move(name)),
-      typeName(std::move(typeName)) {}
+      type(std::move(type)) {}
 
 BlockStmt::BlockStmt(SourceLocation loc)
     : NodeWithKind<BlockStmt, ASTNode::Kind::BlockStmt, Statement>(loc) {}
@@ -257,6 +331,19 @@ FunctionDecl::FunctionDecl(std::string fnName, SourceLocation loc)
 DeclarationStmt::DeclarationStmt(bool isConst, std::string identifier, SourceLocation loc)
     : NodeWithKind<DeclarationStmt, ASTNode::Kind::DeclarationStmt, Statement>(loc),
       isConst(isConst), name(std::move(identifier)) {}
+
+TypePrimitiveExpr::TypePrimitiveExpr(typing::TypeKind kind, SourceLocation loc)
+    : NodeWithKind<TypePrimitiveExpr, ASTNode::Kind::TypePrimitiveExpr, TypeExpr>(loc),
+      kind(kind) {}
+
+TypeArrayExpr::TypeArrayExpr(SourceLocation loc)
+    : NodeWithKind<TypeArrayExpr, ASTNode::Kind::TypeArrayExpr, TypeExpr>(loc) {}
+
+TypeSumExpr::TypeSumExpr(SourceLocation loc)
+    : NodeWithKind<TypeSumExpr, ASTNode::Kind::TypeSumExpr, TypeExpr>(loc) {}
+
+TypeProductExpr::TypeProductExpr(SourceLocation loc)
+    : NodeWithKind<TypeProductExpr, ASTNode::Kind::TypeProductExpr, TypeExpr>(loc) {}
 
 AssignmentStmt::AssignmentStmt(std::string identifier, SourceLocation loc)
     : NodeWithKind<AssignmentStmt, ASTNode::Kind::AssignmentStmt, Statement>(loc),

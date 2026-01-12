@@ -20,6 +20,10 @@ namespace dhad::ast {
   M(ImportDecl)                                                                                    \
   M(FunctionDecl)                                                                                  \
   M(Parameter)                                                                                     \
+  M(TypePrimitiveExpr)                                                                             \
+  M(TypeArrayExpr)                                                                                 \
+  M(TypeSumExpr)                                                                                   \
+  M(TypeProductExpr)                                                                               \
   M(BlockStmt)                                                                                     \
   M(DeclarationStmt)                                                                               \
   M(AssignmentStmt)                                                                                \
@@ -73,6 +77,11 @@ public:
     BreakStmt,
     ContinueStmt,
     ExpressionStmt,
+    TypeExpr,
+    TypePrimitiveExpr,
+    TypeArrayExpr,
+    TypeSumExpr,
+    TypeProductExpr,
     Expression,
     BinaryExpr,
     UnaryExpr,
@@ -129,6 +138,11 @@ struct Statement : ASTNode {
     case Kind::ImportDecl:
     case Kind::FunctionDecl:
     case Kind::Parameter:
+    case Kind::TypeExpr:
+    case Kind::TypePrimitiveExpr:
+    case Kind::TypeArrayExpr:
+    case Kind::TypeSumExpr:
+    case Kind::TypeProductExpr:
       return false;
     default:
       return true;
@@ -137,6 +151,24 @@ struct Statement : ASTNode {
 
 protected:
   Statement(Kind kind, SourceLocation loc) : ASTNode(kind, loc) {}
+};
+
+struct TypeExpr : ASTNode {
+  static bool classof(const ASTNode* node) {
+    switch (node->getKind()) {
+    case Kind::TypeExpr:
+    case Kind::TypePrimitiveExpr:
+    case Kind::TypeArrayExpr:
+    case Kind::TypeSumExpr:
+    case Kind::TypeProductExpr:
+      return true;
+    default:
+      return false;
+    }
+  }
+
+protected:
+  TypeExpr(Kind kind, SourceLocation loc) : ASTNode(kind, loc) {}
 };
 
 struct Expression : Statement {
@@ -179,9 +211,9 @@ struct ImportDecl : NodeWithKind<ImportDecl, ASTNode::Kind::ImportDecl> {
 
 struct Parameter : NodeWithKind<Parameter, ASTNode::Kind::Parameter> {
   std::string name;
-  std::string typeName;
+  NodePtr<TypeExpr> type;
 
-  Parameter(std::string name, std::string typeName, SourceLocation loc);
+  Parameter(std::string name, NodePtr<TypeExpr> type, SourceLocation loc);
 };
 
 struct BlockStmt : NodeWithKind<BlockStmt, ASTNode::Kind::BlockStmt, Statement> {
@@ -193,7 +225,7 @@ struct BlockStmt : NodeWithKind<BlockStmt, ASTNode::Kind::BlockStmt, Statement> 
 struct FunctionDecl : NodeWithKind<FunctionDecl, ASTNode::Kind::FunctionDecl> {
   std::string name;
   std::vector<NodePtr<Parameter>> params;
-  std::optional<std::string> returnType;
+  NodePtr<TypeExpr> returnType;
   NodePtr<BlockStmt> body;
 
   FunctionDecl(std::string fnName, SourceLocation loc);
@@ -202,10 +234,35 @@ struct FunctionDecl : NodeWithKind<FunctionDecl, ASTNode::Kind::FunctionDecl> {
 struct DeclarationStmt : NodeWithKind<DeclarationStmt, ASTNode::Kind::DeclarationStmt, Statement> {
   bool isConst{false};
   std::string name;
-  std::optional<std::string> typeName;
+  NodePtr<TypeExpr> typeName;
   NodePtr<Expression> initializer;
 
   DeclarationStmt(bool isConst, std::string identifier, SourceLocation loc);
+};
+
+struct TypePrimitiveExpr : NodeWithKind<TypePrimitiveExpr, ASTNode::Kind::TypePrimitiveExpr,
+                                        TypeExpr> {
+  typing::TypeKind kind;
+
+  TypePrimitiveExpr(typing::TypeKind kind, SourceLocation loc);
+};
+
+struct TypeArrayExpr : NodeWithKind<TypeArrayExpr, ASTNode::Kind::TypeArrayExpr, TypeExpr> {
+  NodePtr<TypeExpr> element;
+
+  explicit TypeArrayExpr(SourceLocation loc);
+};
+
+struct TypeSumExpr : NodeWithKind<TypeSumExpr, ASTNode::Kind::TypeSumExpr, TypeExpr> {
+  std::vector<NodePtr<TypeExpr>> variants;
+
+  explicit TypeSumExpr(SourceLocation loc);
+};
+
+struct TypeProductExpr : NodeWithKind<TypeProductExpr, ASTNode::Kind::TypeProductExpr, TypeExpr> {
+  std::vector<NodePtr<TypeExpr>> members;
+
+  explicit TypeProductExpr(SourceLocation loc);
 };
 
 struct AssignmentStmt : NodeWithKind<AssignmentStmt, ASTNode::Kind::AssignmentStmt, Statement> {

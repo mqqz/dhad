@@ -21,33 +21,35 @@ struct SemanticValue {
   using ExpressionPtr = ast::NodePtr<ast::Expression>;
   using BlockPtr = ast::NodePtr<ast::BlockStmt>;
   using ParameterPtr = ast::NodePtr<ast::Parameter>;
+  using TypeExprPtr = ast::NodePtr<ast::TypeExpr>;
 
   using TopLevelList = std::vector<ASTNodePtr>;
   using StatementList = std::vector<StatementPtr>;
   using ParameterList = std::vector<ParameterPtr>;
   using ExpressionList = std::vector<ExpressionPtr>;
+  using TypeExprList = std::vector<TypeExprPtr>;
 
   using Storage =
-      std::variant<std::monostate, Token, std::string, std::optional<std::string>, ASTNodePtr,
-                   ProgramPtr, StatementPtr, ExpressionPtr, BlockPtr, ParameterPtr, TopLevelList,
-                   StatementList, ParameterList, ExpressionList>;
+      std::variant<std::monostate, Token, ASTNodePtr, ProgramPtr, StatementPtr, ExpressionPtr,
+                   BlockPtr, ParameterPtr, TypeExprPtr, TopLevelList, StatementList,
+                   ParameterList, ExpressionList, TypeExprList>;
 
   Storage storage;
 
   SemanticValue() = default;
   explicit SemanticValue(Token token) : storage(std::move(token)) {}
-  explicit SemanticValue(std::string text) : storage(std::move(text)) {}
-  explicit SemanticValue(std::optional<std::string> opt) : storage(std::move(opt)) {}
   explicit SemanticValue(ASTNodePtr node) : storage(std::move(node)) {}
   explicit SemanticValue(ProgramPtr node) : storage(std::move(node)) {}
   explicit SemanticValue(StatementPtr node) : storage(std::move(node)) {}
   explicit SemanticValue(ExpressionPtr node) : storage(std::move(node)) {}
   explicit SemanticValue(BlockPtr node) : storage(std::move(node)) {}
   explicit SemanticValue(ParameterPtr node) : storage(std::move(node)) {}
+  explicit SemanticValue(TypeExprPtr node) : storage(std::move(node)) {}
   explicit SemanticValue(TopLevelList list) : storage(std::move(list)) {}
   explicit SemanticValue(StatementList list) : storage(std::move(list)) {}
   explicit SemanticValue(ParameterList list) : storage(std::move(list)) {}
   explicit SemanticValue(ExpressionList list) : storage(std::move(list)) {}
+  explicit SemanticValue(TypeExprList list) : storage(std::move(list)) {}
 
   template <typename T> [[nodiscard]] bool holds() const {
     return std::holds_alternative<T>(storage);

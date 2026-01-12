@@ -1,23 +1,41 @@
 Parse succeeded: tests/sources/parser_smoke.dh
 Program
   ImportDecl module="أساس"
-  FunctionDecl بداية -> int
+  FunctionDecl بداية
+  ReturnType:
+    TypePrimitive int
   Body:
     BlockStmt
-      VarDecl س: int
+      VarDecl س
+      Type:
+        TypePrimitive int
       Initializer:
         Literal "10"
-      VarDecl مصفوفة: [int]
+      VarDecl مصفوفة
+      Type:
+        TypeArray
+        Element:
+          TypePrimitive int
       Initializer:
         ArrayLiteral
         Elements:
           Literal "1"
           Literal "2"
           Literal "3"
-      VarDecl احتمال: int|string
+      VarDecl احتمال
+      Type:
+        TypeSum
+        Variants:
+          TypePrimitive int
+          TypePrimitive string
       Initializer:
         Literal "0"
-      VarDecl زوج: int*int
+      VarDecl زوج
+      Type:
+        TypeProduct
+        Members:
+          TypePrimitive int
+          TypePrimitive int
       Initializer:
         Literal "1"
       ConstDecl ض

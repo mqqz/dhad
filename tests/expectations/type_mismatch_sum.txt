@@ -1,0 +1,1 @@
+tests/sources/type_mismatch_sum.dh:2:22: error: Type mismatch for initializer: expected 7 but got 2

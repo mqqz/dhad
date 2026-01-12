@@ -126,7 +126,7 @@ struct CodeGenModule::Impl {
   std::string emitIR() const;
 
 private:
-  llvm::Type* getTypeByName(const std::optional<std::string>& name);
+  llvm::Type* getTypeByExpr(const ast::TypeExpr* type);
   llvm::Type* getTypeByLiteral(const ast::LiteralExpr& literal);
   llvm::PointerType* getBytePtrType();
   llvm::Value* emitExpression(const ast::Expression* expr);
@@ -217,24 +217,34 @@ llvm::PointerType* CodeGenModule::Impl::getBytePtrType() {
   return llvm::PointerType::get(context, 0);
 }
 
-llvm::Type* CodeGenModule::Impl::getTypeByName(const std::optional<std::string>& name) {
-  if (!name || name->empty()) {
+llvm::Type* CodeGenModule::Impl::getTypeByExpr(const ast::TypeExpr* type) {
+  if (!type) {
     return nullptr;
   }
-  const std::string& typeName = *name;
-  if (typeName == "int") {
-    return llvm::Type::getInt32Ty(context);
+  if (auto* prim = llvm::dyn_cast<ast::TypePrimitiveExpr>(type)) {
+    switch (prim->kind) {
+    case typing::TypeKind::Int:
+      return llvm::Type::getInt32Ty(context);
+    case typing::TypeKind::Bool:
+      return llvm::Type::getInt1Ty(context);
+    case typing::TypeKind::Float:
+      return llvm::Type::getFloatTy(context);
+    case typing::TypeKind::Char:
+      return llvm::Type::getInt8Ty(context);
+    case typing::TypeKind::String:
+    case typing::TypeKind::Null:
+      return getBytePtrType();
+    default:
+      return nullptr;
+    }
   }
-  if (typeName == "bool") {
-    return llvm::Type::getInt1Ty(context);
+  if (llvm::isa<ast::TypeArrayExpr>(type)) {
+    return getBytePtrType();
   }
-  if (typeName == "float") {
-    return llvm::Type::getFloatTy(context);
+  if (llvm::isa<ast::TypeSumExpr>(type)) {
+    return getBytePtrType();
   }
-  if (typeName == "char") {
-    return llvm::Type::getInt8Ty(context);
-  }
-  if (typeName == "string" || typeName == "null") {
+  if (llvm::isa<ast::TypeProductExpr>(type)) {
     return getBytePtrType();
   }
   return nullptr;
@@ -382,13 +392,13 @@ bool CodeGenModule::Impl::declareFunction(const ast::FunctionDecl& fn) {
   std::vector<llvm::Type*> paramTypes;
   paramTypes.reserve(fn.params.size());
   for (const auto& param : fn.params) {
-    auto* type = getTypeByName(param->typeName);
+    auto* type = getTypeByExpr(param->type.get());
     if (!type) {
       return false;
     }
     paramTypes.push_back(type);
   }
-  llvm::Type* returnType = fn.returnType ? getTypeByName(fn.returnType) : nullptr;
+  llvm::Type* returnType = fn.returnType ? getTypeByExpr(fn.returnType.get()) : nullptr;
   if (!returnType) {
     returnType = llvm::Type::getVoidTy(context);
   }
@@ -456,7 +466,7 @@ bool CodeGenModule::Impl::emitBlock(const ast::BlockStmt* block) {
 
 bool CodeGenModule::Impl::emitDeclaration(const ast::DeclarationStmt& stmt) {
   auto* initializer = stmt.initializer ? emitExpression(stmt.initializer.get()) : nullptr;
-  llvm::Type* type = stmt.typeName ? getTypeByName(stmt.typeName) : nullptr;
+  llvm::Type* type = stmt.typeName ? getTypeByExpr(stmt.typeName.get()) : nullptr;
   if (!type && initializer) {
     type = initializer->getType();
   }

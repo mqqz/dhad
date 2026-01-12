@@ -45,20 +45,20 @@ bool TypeChecker::declareGlobalFunction(ast::FunctionDecl& fn) {
   std::vector<TypePtr> params;
   params.reserve(fn.params.size());
   for (const auto& param : fn.params) {
-    auto type = resolveTypeName(param->typeName);
+    auto type = resolveTypeExpr(param->type.get());
     if (!type) {
       std::ostringstream os;
-      os << "Unknown parameter type '" << param->typeName << "' in function '" << fn.name << "'";
+      os << "Unknown parameter type in function '" << fn.name << "'";
       reportError(param->getLocation(), os.str());
       return false;
     }
     params.push_back(std::move(type));
   }
 
-  TypePtr returnType = fn.returnType ? resolveTypeName(*fn.returnType) : voidType();
+  TypePtr returnType = fn.returnType ? resolveTypeExpr(fn.returnType.get()) : voidType();
   if (!returnType) {
     std::ostringstream os;
-    os << "Unknown return type '" << *fn.returnType << "' in function '" << fn.name << "'";
+    os << "Unknown return type in function '" << fn.name << "'";
     reportError(fn.getLocation(), os.str());
     return false;
   }
@@ -89,7 +89,7 @@ bool TypeChecker::checkTopLevel(ast::ASTNode& node) {
 
 bool TypeChecker::checkFunction(ast::FunctionDecl& fn) {
   currentFunction_ = &fn.name;
-  currentReturnType_ = fn.returnType ? resolveTypeName(*fn.returnType) : voidType();
+  currentReturnType_ = fn.returnType ? resolveTypeExpr(fn.returnType.get()) : voidType();
   if (!currentReturnType_) {
     reportError(fn.getLocation(), "Unknown return type");
     currentReturnType_ = voidType();
@@ -97,9 +97,9 @@ bool TypeChecker::checkFunction(ast::FunctionDecl& fn) {
 
   scopes_.enterScope();
   for (const auto& param : fn.params) {
-    auto type = resolveTypeName(param->typeName);
+    auto type = resolveTypeExpr(param->type.get());
     if (!type) {
-      reportError(param->getLocation(), "Unknown parameter type '" + param->typeName + "'");
+      reportError(param->getLocation(), "Unknown parameter type");
       continue;
     }
     if (!scopes_.declare(param->name, type)) {
@@ -178,7 +178,7 @@ bool TypeChecker::checkDeclaration(ast::DeclarationStmt& stmt) {
     return false;
   }
   auto initType = checkExpression(*stmt.initializer);
-  TypePtr declaredType = stmt.typeName ? resolveTypeName(*stmt.typeName) : initType;
+  TypePtr declaredType = stmt.typeName ? resolveTypeExpr(stmt.typeName.get()) : initType;
   if (!declaredType) {
     reportError(stmt.getLocation(), "Unable to resolve declared type");
     return false;
@@ -448,16 +448,45 @@ bool TypeChecker::expectAssignable(const SourceLocation& loc, const TypePtr& tar
   return false;
 }
 
-TypePtr TypeChecker::resolveTypeName(const std::string& name) {
-  static const std::unordered_map<std::string, TypeKind> mapping = {
-      {"int", TypeKind::Int},   {"float", TypeKind::Float},   {"bool", TypeKind::Bool},
-      {"char", TypeKind::Char}, {"string", TypeKind::String}, {"null", TypeKind::Null},
-  };
-  auto it = mapping.find(name);
-  if (it == mapping.end()) {
+TypePtr TypeChecker::resolveTypeExpr(const ast::TypeExpr* type) {
+  if (!type) {
     return nullptr;
   }
-  return makePrimitive(it->second);
+  if (auto* prim = llvm::dyn_cast<ast::TypePrimitiveExpr>(type)) {
+    return makePrimitive(prim->kind);
+  }
+  if (auto* array = llvm::dyn_cast<ast::TypeArrayExpr>(type)) {
+    auto element = resolveTypeExpr(array->element.get());
+    if (!element) {
+      return nullptr;
+    }
+    return makeArray(std::move(element));
+  }
+  if (auto* sum = llvm::dyn_cast<ast::TypeSumExpr>(type)) {
+    std::vector<TypePtr> variants;
+    variants.reserve(sum->variants.size());
+    for (const auto& variant : sum->variants) {
+      auto resolved = resolveTypeExpr(variant.get());
+      if (!resolved) {
+        return nullptr;
+      }
+      variants.push_back(std::move(resolved));
+    }
+    return makeSum(std::move(variants));
+  }
+  if (auto* product = llvm::dyn_cast<ast::TypeProductExpr>(type)) {
+    std::vector<TypePtr> members;
+    members.reserve(product->members.size());
+    for (const auto& member : product->members) {
+      auto resolved = resolveTypeExpr(member.get());
+      if (!resolved) {
+        return nullptr;
+      }
+      members.push_back(std::move(resolved));
+    }
+    return makeProduct(std::move(members));
+  }
+  return nullptr;
 }
 
 bool TypeChecker::typeEquals(const TypePtr& lhs, const TypePtr& rhs) const {
@@ -469,6 +498,37 @@ bool TypeChecker::typeEquals(const TypePtr& lhs, const TypePtr& rhs) const {
   }
   if (lhs->kind != rhs->kind) {
     return false;
+  }
+  if (lhs->kind == TypeKind::Array) {
+    const auto& la = std::get<ArrayTypeInfo>(lhs->payload);
+    const auto& rb = std::get<ArrayTypeInfo>(rhs->payload);
+    return typeEquals(la.element, rb.element);
+  }
+  if (lhs->kind == TypeKind::Sum) {
+    const auto& la = std::get<SumTypeInfo>(lhs->payload);
+    const auto& rb = std::get<SumTypeInfo>(rhs->payload);
+    if (la.variants.size() != rb.variants.size()) {
+      return false;
+    }
+    for (std::size_t i = 0; i < la.variants.size(); ++i) {
+      if (!typeEquals(la.variants[i], rb.variants[i])) {
+        return false;
+      }
+    }
+    return true;
+  }
+  if (lhs->kind == TypeKind::Product) {
+    const auto& la = std::get<ProductTypeInfo>(lhs->payload);
+    const auto& rb = std::get<ProductTypeInfo>(rhs->payload);
+    if (la.members.size() != rb.members.size()) {
+      return false;
+    }
+    for (std::size_t i = 0; i < la.members.size(); ++i) {
+      if (!typeEquals(la.members[i], rb.members[i])) {
+        return false;
+      }
+    }
+    return true;
   }
   if (lhs->kind == TypeKind::Function) {
     const auto& la = std::get<FunctionTypeInfo>(lhs->payload);

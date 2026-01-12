@@ -1,0 +1,1 @@
+tests/sources/type_mismatch_product.dh:2:24: error: Type mismatch for initializer: expected 8 but got 0
