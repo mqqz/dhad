@@ -103,8 +103,7 @@ bool invokeClang(const std::string& inputIR, const std::string& outputPath) {
     clangExecutable = *found;
   }
 
-  std::vector<std::string> storage = {
-      clangExecutable, "-mllvm", "-opaque-pointers=1", "-x", "ir", inputIR, "-o", outputPath};
+  std::vector<std::string> storage = {clangExecutable, "-x", "ir", inputIR, "-o", outputPath};
   llvm::SmallVector<llvm::StringRef, 8> args;
   for (const auto& arg : storage) {
     args.push_back(arg);

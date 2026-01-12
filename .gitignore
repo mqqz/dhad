@@ -50,3 +50,6 @@ __pycache__/
 *.py[codz]
 *$py.class
 tests/.logs/
+
+# example file
+hello
