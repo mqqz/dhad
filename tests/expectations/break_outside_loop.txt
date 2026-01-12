@@ -1,0 +1,1 @@
+tests/sources/break_outside_loop.dh:1:1: error: break used outside of a loop

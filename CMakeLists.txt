@@ -236,4 +236,18 @@ if(BUILD_TESTING)
             --example "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/ex1.dh"
             --opt "${LLVM_TOOLS_BINARY_DIR}/opt"
             --lli "${LLVM_TOOLS_BINARY_DIR}/lli")
+
+  add_test(
+    NAME break_continue_outside_loop
+    COMMAND
+      "${DHAD_TEST_PYTHON}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_dhad_tests.py"
+      --driver
+      "$<TARGET_FILE:dhad>"
+      --case
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/break_outside_loop.dh"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/break_outside_loop.txt"
+      --case
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/continue_outside_loop.dh"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/continue_outside_loop.txt")
 endif()

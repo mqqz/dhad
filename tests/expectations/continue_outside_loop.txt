@@ -1,0 +1,1 @@
+tests/sources/continue_outside_loop.dh:1:1: error: continue used outside of a loop

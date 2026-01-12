@@ -31,6 +31,7 @@ private:
   ScopeStack scopes_;
   const std::string* currentFunction_{nullptr};
   TypePtr currentReturnType_;
+  int loopDepth_{0};
   std::vector<TypeError> errors_;
 
   void reportError(const SourceLocation& loc, std::string message);

@@ -20,6 +20,7 @@ TypeCheckerResult TypeChecker::check(ast::Program& program) {
   scopes_ = ScopeStack{};
   currentFunction_ = nullptr;
   currentReturnType_ = voidType();
+  loopDepth_ = 0;
 
   // Declare functions first so they can reference each other.
   for (auto& node : program.topLevel) {
@@ -140,6 +141,20 @@ bool TypeChecker::checkStatement(ast::Statement& stmt) {
   if (auto* ret = llvm::dyn_cast<ast::ReturnStmt>(&stmt)) {
     return checkReturn(*ret);
   }
+  if (auto* brk = llvm::dyn_cast<ast::BreakStmt>(&stmt)) {
+    if (loopDepth_ == 0) {
+      reportError(brk->getLocation(), "break used outside of a loop");
+      return false;
+    }
+    return true;
+  }
+  if (auto* cont = llvm::dyn_cast<ast::ContinueStmt>(&stmt)) {
+    if (loopDepth_ == 0) {
+      reportError(cont->getLocation(), "continue used outside of a loop");
+      return false;
+    }
+    return true;
+  }
   if (auto* exprStmt = llvm::dyn_cast<ast::ExpressionStmt>(&stmt)) {
     return checkExpressionStmt(*exprStmt);
   }
@@ -198,13 +213,19 @@ bool TypeChecker::checkIf(ast::IfStmt& stmt) {
 bool TypeChecker::checkWhile(ast::WhileStmt& stmt) {
   auto condType = checkExpression(*stmt.condition);
   requireBoolean(*stmt.condition, condType);
-  return stmt.body ? checkStatement(*stmt.body) : true;
+  loopDepth_++;
+  bool ok = stmt.body ? checkStatement(*stmt.body) : true;
+  loopDepth_--;
+  return ok;
 }
 
 bool TypeChecker::checkFor(ast::ForStmt& stmt) {
   auto condType = checkExpression(*stmt.condition);
   requireBoolean(*stmt.condition, condType);
-  return stmt.body ? checkStatement(*stmt.body) : true;
+  loopDepth_++;
+  bool ok = stmt.body ? checkStatement(*stmt.body) : true;
+  loopDepth_--;
+  return ok;
 }
 
 bool TypeChecker::checkReturn(ast::ReturnStmt& stmt) {
