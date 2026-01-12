@@ -261,4 +261,26 @@ if(BUILD_TESTING)
       --case
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/missing_return.dh"
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/missing_return.txt")
+
+  add_test(
+    NAME import_from_file
+    COMMAND
+      "${DHAD_TEST_PYTHON}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_dhad_ir_tests.py"
+      --driver
+      "$<TARGET_FILE:dhad>"
+      --case
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/import_main.dh"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/import_ir_contains.txt")
+
+  add_test(
+    NAME import_missing
+    COMMAND
+      "${DHAD_TEST_PYTHON}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_dhad_tests.py"
+      --driver
+      "$<TARGET_FILE:dhad>"
+      --case
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/import_missing.dh"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/import_missing.txt")
 endif()

@@ -1,0 +1,3 @@
+define i32 @helper()
+define i32 @main()
+call i32 @helper()

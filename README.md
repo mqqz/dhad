@@ -37,8 +37,9 @@ The language uses a handwritten LALR(1) parser and an LLVM backend (so hopefully
 
 ## Project Notes
 
-- Programs must import the standard module (so far only print lol) via `استورد أساس;` and expose an entry
-  point called `دالة بداية()`.
+- The standard library is injected by default (so `اطبع` works without an import). Imports are for
+  pulling in other source files: `استورد foo;` loads `foo.dh` from the same directory.
+- Programs should expose an entry point called `دالة بداية()`.
 - The parser/generator infrastructure relies on Python scripts in `tools/`.
   Regenerate tables with `cmake --build build --target parser_tables_gen` if you
   edit the grammar.
