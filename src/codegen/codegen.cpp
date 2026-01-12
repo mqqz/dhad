@@ -13,6 +13,7 @@
 #include <llvm/IR/Verifier.h>
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/TargetParser/Host.h>
+#include <llvm/TargetParser/Triple.h>
 
 #include <optional>
 #include <string>
@@ -22,6 +23,7 @@
 #include <vector>
 
 namespace dhad::codegen {
+using llvm::sys::getDefaultTargetTriple;
 
 namespace {
 
@@ -115,7 +117,7 @@ struct CodeGenModule::Impl {
   explicit Impl(std::string name)
       : moduleName(std::move(name)), module(std::make_unique<llvm::Module>(moduleName, context)),
         builder(context) {
-    module->setTargetTriple(llvm::sys::getDefaultTargetTriple());
+    module->setTargetTriple(llvm::Triple(getDefaultTargetTriple()));
   }
 
   bool generate(const ast::Program& program);
@@ -210,7 +212,7 @@ bool CodeGenModule::Impl::generate(const ast::Program& program) {
 }
 
 llvm::PointerType* CodeGenModule::Impl::getBytePtrType() {
-  return llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0);
+  return llvm::PointerType::get(context, 0);
 }
 
 llvm::Type* CodeGenModule::Impl::getTypeByName(const std::optional<std::string>& name) {
