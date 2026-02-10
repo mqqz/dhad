@@ -21,12 +21,13 @@ TypePtr makeArray(TypePtr element) {
   return std::make_shared<Type>(TypeKind::Array, ArrayTypeInfo{std::move(element)});
 }
 
-TypePtr makeSum(std::vector<TypePtr> variants) {
-  return std::make_shared<Type>(TypeKind::Sum, SumTypeInfo{std::move(variants)});
+TypePtr makeSum(std::vector<TypePtr> variants, std::string name) {
+  return std::make_shared<Type>(TypeKind::Sum, SumTypeInfo{std::move(variants), std::move(name)});
 }
 
-TypePtr makeProduct(std::vector<TypePtr> members) {
-  return std::make_shared<Type>(TypeKind::Product, ProductTypeInfo{std::move(members)});
+TypePtr makeProduct(std::vector<TypePtr> members, std::string name) {
+  return std::make_shared<Type>(TypeKind::Product,
+                                ProductTypeInfo{std::move(members), std::move(name)});
 }
 
 TypePtr makeFunction(std::vector<TypePtr> params, TypePtr result) {

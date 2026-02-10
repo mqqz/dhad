@@ -7,6 +7,8 @@
 
 #include <string>
 #include <string_view>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace dhad::typing {
@@ -32,6 +34,10 @@ private:
   const std::string* currentFunction_{nullptr};
   TypePtr currentReturnType_;
   int loopDepth_{0};
+  std::unordered_map<std::string, const ast::StructDecl*> structDecls_;
+  std::unordered_map<std::string, const ast::EnumDecl*> enumDecls_;
+  std::unordered_map<std::string, TypePtr> namedTypes_;
+  std::unordered_set<std::string> resolvingTypes_;
   std::vector<TypeError> errors_;
 
   void reportError(const SourceLocation& loc, std::string message);
@@ -56,7 +62,9 @@ private:
   TypePtr checkUnary(ast::UnaryExpr& expr);
   TypePtr checkLiteral(ast::LiteralExpr& expr);
   TypePtr checkIdentifier(ast::IdentifierExpr& expr);
+  TypePtr checkFieldAccess(ast::FieldAccessExpr& expr);
   TypePtr checkCall(ast::CallExpr& expr);
+  TypePtr checkStructLiteral(ast::StructLiteralExpr& expr);
 
   TypePtr requireBoolean(ast::Expression& expr, TypePtr type);
   TypePtr requireNumeric(ast::Expression& expr, TypePtr type);
@@ -64,10 +72,13 @@ private:
                         std::string_view context);
 
   TypePtr resolveTypeExpr(const ast::TypeExpr* type);
+  TypePtr resolveNamedType(std::string_view name, const SourceLocation& loc);
+  void registerTypeDecls(const ast::Program& program);
   [[nodiscard]] bool typeEquals(const TypePtr& lhs, const TypePtr& rhs) const;
   [[nodiscard]] bool isNumericKind(TypeKind kind) const;
   [[nodiscard]] bool isArithmeticOperandKind(TypeKind kind) const;
   [[nodiscard]] bool isPointerLike(TypeKind kind) const;
+  [[nodiscard]] bool isNullableType(const TypePtr& type) const;
   [[nodiscard]] bool canImplicitlyConvert(const TypePtr& from, const TypePtr& to) const;
   [[nodiscard]] TypePtr arithmeticResultType(const TypePtr& lhs, const TypePtr& rhs) const;
 };

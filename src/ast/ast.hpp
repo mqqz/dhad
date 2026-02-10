@@ -20,10 +20,16 @@ namespace dhad::ast {
   M(ImportDecl)                                                                                    \
   M(FunctionDecl)                                                                                  \
   M(Parameter)                                                                                     \
+  M(StructDecl)                                                                                    \
+  M(EnumDecl)                                                                                      \
+  M(StructField)                                                                                   \
+  M(EnumVariant)                                                                                   \
+  M(StructFieldInit)                                                                               \
   M(TypePrimitiveExpr)                                                                             \
   M(TypeArrayExpr)                                                                                 \
   M(TypeSumExpr)                                                                                   \
   M(TypeProductExpr)                                                                               \
+  M(NamedTypeExpr)                                                                                 \
   M(BlockStmt)                                                                                     \
   M(DeclarationStmt)                                                                               \
   M(AssignmentStmt)                                                                                \
@@ -38,8 +44,10 @@ namespace dhad::ast {
   M(UnaryExpr)                                                                                     \
   M(LiteralExpr)                                                                                   \
   M(IdentifierExpr)                                                                                \
+  M(FieldAccessExpr)                                                                               \
   M(CallExpr)                                                                                      \
-  M(ArrayLiteralExpr)
+  M(ArrayLiteralExpr)                                                                              \
+  M(StructLiteralExpr)
 
 #define DHAD_AST_FWD_DECL(NodeName) struct NodeName;
 DHAD_AST_FOR_EACH_CONCRETE_NODE(DHAD_AST_FWD_DECL)
@@ -65,6 +73,11 @@ public:
     ImportDecl,
     FunctionDecl,
     Parameter,
+    StructDecl,
+    EnumDecl,
+    StructField,
+    EnumVariant,
+    StructFieldInit,
     BlockStmt,
     StatementList,
     DeclarationStmt,
@@ -82,13 +95,16 @@ public:
     TypeArrayExpr,
     TypeSumExpr,
     TypeProductExpr,
+    NamedTypeExpr,
     Expression,
     BinaryExpr,
     UnaryExpr,
     LiteralExpr,
     IdentifierExpr,
+    FieldAccessExpr,
     CallExpr,
-    ArrayLiteralExpr
+    ArrayLiteralExpr,
+    StructLiteralExpr
   };
 
   virtual ~ASTNode();
@@ -138,11 +154,16 @@ struct Statement : ASTNode {
     case Kind::ImportDecl:
     case Kind::FunctionDecl:
     case Kind::Parameter:
+    case Kind::StructDecl:
+    case Kind::EnumDecl:
+    case Kind::StructField:
+    case Kind::EnumVariant:
     case Kind::TypeExpr:
     case Kind::TypePrimitiveExpr:
     case Kind::TypeArrayExpr:
     case Kind::TypeSumExpr:
     case Kind::TypeProductExpr:
+    case Kind::NamedTypeExpr:
       return false;
     default:
       return true;
@@ -161,6 +182,7 @@ struct TypeExpr : ASTNode {
     case Kind::TypeArrayExpr:
     case Kind::TypeSumExpr:
     case Kind::TypeProductExpr:
+    case Kind::NamedTypeExpr:
       return true;
     default:
       return false;
@@ -179,8 +201,10 @@ struct Expression : Statement {
     case Kind::UnaryExpr:
     case Kind::LiteralExpr:
     case Kind::IdentifierExpr:
+    case Kind::FieldAccessExpr:
     case Kind::CallExpr:
     case Kind::ArrayLiteralExpr:
+    case Kind::StructLiteralExpr:
       return true;
     default:
       return false;
@@ -247,6 +271,12 @@ struct TypePrimitiveExpr : NodeWithKind<TypePrimitiveExpr, ASTNode::Kind::TypePr
   TypePrimitiveExpr(typing::TypeKind kind, SourceLocation loc);
 };
 
+struct NamedTypeExpr : NodeWithKind<NamedTypeExpr, ASTNode::Kind::NamedTypeExpr, TypeExpr> {
+  std::string name;
+
+  NamedTypeExpr(std::string name, SourceLocation loc);
+};
+
 struct TypeArrayExpr : NodeWithKind<TypeArrayExpr, ASTNode::Kind::TypeArrayExpr, TypeExpr> {
   NodePtr<TypeExpr> element;
 
@@ -263,6 +293,34 @@ struct TypeProductExpr : NodeWithKind<TypeProductExpr, ASTNode::Kind::TypeProduc
   std::vector<NodePtr<TypeExpr>> members;
 
   explicit TypeProductExpr(SourceLocation loc);
+};
+
+struct StructDecl : NodeWithKind<StructDecl, ASTNode::Kind::StructDecl> {
+  std::string name;
+  std::vector<NodePtr<StructField>> fields;
+
+  StructDecl(std::string name, SourceLocation loc);
+};
+
+struct EnumDecl : NodeWithKind<EnumDecl, ASTNode::Kind::EnumDecl> {
+  std::string name;
+  std::vector<NodePtr<EnumVariant>> variants;
+
+  EnumDecl(std::string name, SourceLocation loc);
+};
+
+struct StructField : NodeWithKind<StructField, ASTNode::Kind::StructField> {
+  std::string name;
+  NodePtr<TypeExpr> type;
+
+  StructField(std::string name, NodePtr<TypeExpr> type, SourceLocation loc);
+};
+
+struct EnumVariant : NodeWithKind<EnumVariant, ASTNode::Kind::EnumVariant> {
+  std::string name;
+  NodePtr<TypeExpr> payload;
+
+  EnumVariant(std::string name, NodePtr<TypeExpr> payload, SourceLocation loc);
 };
 
 struct AssignmentStmt : NodeWithKind<AssignmentStmt, ASTNode::Kind::AssignmentStmt, Statement> {
@@ -346,6 +404,14 @@ struct IdentifierExpr : NodeWithKind<IdentifierExpr, ASTNode::Kind::IdentifierEx
   IdentifierExpr(std::string identifier, SourceLocation loc);
 };
 
+struct FieldAccessExpr
+    : NodeWithKind<FieldAccessExpr, ASTNode::Kind::FieldAccessExpr, Expression> {
+  NodePtr<Expression> base;
+  std::string field;
+
+  FieldAccessExpr(std::string field, SourceLocation loc);
+};
+
 struct CallExpr : NodeWithKind<CallExpr, ASTNode::Kind::CallExpr, Expression> {
   std::string callee;
   std::vector<NodePtr<Expression>> args;
@@ -358,6 +424,21 @@ struct ArrayLiteralExpr
   std::vector<NodePtr<Expression>> elements;
 
   explicit ArrayLiteralExpr(SourceLocation loc);
+};
+
+struct StructFieldInit : NodeWithKind<StructFieldInit, ASTNode::Kind::StructFieldInit> {
+  std::string name;
+  NodePtr<Expression> value;
+
+  StructFieldInit(std::string name, SourceLocation loc);
+};
+
+struct StructLiteralExpr
+    : NodeWithKind<StructLiteralExpr, ASTNode::Kind::StructLiteralExpr, Expression> {
+  std::string typeName;
+  std::vector<NodePtr<StructFieldInit>> fields;
+
+  StructLiteralExpr(std::string typeName, SourceLocation loc);
 };
 
 } // namespace dhad::ast

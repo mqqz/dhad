@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <memory>
+#include <string>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -30,10 +31,12 @@ struct ArrayTypeInfo {
 
 struct SumTypeInfo {
   std::vector<TypePtr> variants;
+  std::string name;
 };
 
 struct ProductTypeInfo {
   std::vector<TypePtr> members;
+  std::string name;
 };
 
 struct FunctionTypeInfo {
@@ -54,8 +57,8 @@ struct Type {
 
 TypePtr makePrimitive(TypeKind kind);
 TypePtr makeArray(TypePtr element);
-TypePtr makeSum(std::vector<TypePtr> variants);
-TypePtr makeProduct(std::vector<TypePtr> members);
+TypePtr makeSum(std::vector<TypePtr> variants, std::string name = {});
+TypePtr makeProduct(std::vector<TypePtr> members, std::string name = {});
 TypePtr makeFunction(std::vector<TypePtr> params, TypePtr result);
 
 bool isPrimitive(TypeKind kind);

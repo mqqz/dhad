@@ -18,9 +18,28 @@ namespace dhad::parser {
   F(TopLevelListAppend)                                                                            \
   F(TopLevelListEmpty)                                                                             \
   F(TopLevelImport)                                                                                \
+  F(TopLevelTypeDecl)                                                                              \
   F(TopLevelFunction)                                                                              \
   F(TopLevelStatement)                                                                             \
   F(ImportDecl)                                                                                    \
+  F(TypeDeclStruct)                                                                                \
+  F(TypeDeclEnum)                                                                                  \
+  F(StructDecl)                                                                                    \
+  F(StructFieldListSome)                                                                           \
+  F(StructFieldListNone)                                                                           \
+  F(StructFieldListBuild)                                                                          \
+  F(StructFieldTailAppend)                                                                          \
+  F(StructFieldTailEmpty)                                                                           \
+  F(StructField)                                                                                   \
+  F(EnumDecl)                                                                                      \
+  F(EnumVariantListSome)                                                                           \
+  F(EnumVariantListNone)                                                                           \
+  F(EnumVariantListBuild)                                                                          \
+  F(EnumVariantTailAppend)                                                                          \
+  F(EnumVariantTailEmpty)                                                                           \
+  F(EnumVariant)                                                                                   \
+  F(EnumVariantPayloadSome)                                                                        \
+  F(EnumVariantPayloadNone)                                                                        \
   F(FunctionDecl)                                                                                  \
   F(FunctionReturnTypeSome)                                                                        \
   F(FunctionReturnTypeNone)                                                                        \
@@ -61,14 +80,23 @@ namespace dhad::parser {
   F(ArgumentTailAppend)                                                                            \
   F(ArgumentTailEmpty)                                                                             \
   F(ExpressionPass)                                                                                \
+  F(FieldAccess)                                                                                   \
   F(BinaryExpr)                                                                                    \
   F(UnaryPrefix)                                                                                   \
   F(PrimaryLiteral)                                                                                \
   F(PrimaryIdentifier)                                                                             \
   F(PrimaryGrouping)                                                                               \
   F(ArrayLiteral)                                                                                  \
+  F(StructLiteral)                                                                                 \
+  F(StructFieldInitListSome)                                                                       \
+  F(StructFieldInitListNone)                                                                       \
+  F(StructFieldInitListBuild)                                                                      \
+  F(StructFieldInitTailAppend)                                                                     \
+  F(StructFieldInitTailEmpty)                                                                      \
+  F(StructFieldInit)                                                                               \
   F(TypeNameUnion)                                                                                 \
   F(TypeNameFromPrimary)                                                                           \
+  F(TypeNameIdentifier)                                                                            \
   F(TypePrimaryArray)                                                                              \
   F(TypePrimaryTuple)                                                                              \
   F(TypePrimaryGrouped)                                                                            \

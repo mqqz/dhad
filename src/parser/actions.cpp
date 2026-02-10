@@ -123,6 +123,10 @@ SemanticValue actionTopLevelFunction(ReductionContext& ctx) {
   return SemanticValue(ctx.values[0].takeNode());
 }
 
+SemanticValue actionTopLevelTypeDecl(ReductionContext& ctx) {
+  return SemanticValue(ctx.values[0].takeNode());
+}
+
 SemanticValue actionTopLevelStatement(ReductionContext& ctx) {
   SV::ASTNodePtr node = ctx.take<SV::StatementPtr>(0);
   return SemanticValue(std::move(node));
@@ -134,6 +138,140 @@ SemanticValue actionImportDecl(ReductionContext& ctx) {
   (void)ctx.take<Token>(2);
   auto node = std::make_unique<ast::ImportDecl>(tokenLexeme(ident), kw.loc);
   return SemanticValue(SV::ASTNodePtr(std::move(node)));
+}
+
+SemanticValue actionTypeDeclStruct(ReductionContext& ctx) {
+  return SemanticValue(ctx.values[0].takeNode());
+}
+
+SemanticValue actionTypeDeclEnum(ReductionContext& ctx) {
+  return SemanticValue(ctx.values[0].takeNode());
+}
+
+SemanticValue actionStructDecl(ReductionContext& ctx) {
+  (void)ctx.take<Token>(0);
+  (void)ctx.take<Token>(1);
+  auto nameTok = ctx.take<Token>(2);
+  (void)ctx.take<Token>(3);
+  auto fields = ctx.take<SV::StructFieldList>(4);
+  (void)ctx.take<Token>(5);
+  (void)ctx.take<Token>(6);
+  auto node = std::make_unique<ast::StructDecl>(tokenLexeme(nameTok), nameTok.loc);
+  for (auto& field : fields) {
+    node->fields.push_back(std::move(field));
+  }
+  return SemanticValue(SV::ASTNodePtr(std::move(node)));
+}
+
+SemanticValue actionStructFieldListSome(ReductionContext& ctx) {
+  return SemanticValue(ctx.take<SV::StructFieldList>(0));
+}
+
+SemanticValue actionStructFieldListNone(ReductionContext&) {
+  return SemanticValue(SV::StructFieldList{});
+}
+
+SemanticValue actionStructFieldListBuild(ReductionContext& ctx) {
+  auto first = ctx.take<SV::StructFieldPtr>(0);
+  auto tail = ctx.take<SV::StructFieldList>(1);
+  SV::StructFieldList list;
+  list.push_back(std::move(first));
+  for (auto& entry : tail) {
+    list.push_back(std::move(entry));
+  }
+  return SemanticValue(std::move(list));
+}
+
+SemanticValue actionStructFieldTailAppend(ReductionContext& ctx) {
+  (void)ctx.take<Token>(0);
+  auto field = ctx.take<SV::StructFieldPtr>(1);
+  auto tail = ctx.take<SV::StructFieldList>(2);
+  SV::StructFieldList list;
+  list.push_back(std::move(field));
+  for (auto& entry : tail) {
+    list.push_back(std::move(entry));
+  }
+  return SemanticValue(std::move(list));
+}
+
+SemanticValue actionStructFieldTailEmpty(ReductionContext&) {
+  return SemanticValue(SV::StructFieldList{});
+}
+
+SemanticValue actionStructField(ReductionContext& ctx) {
+  auto nameTok = ctx.take<Token>(0);
+  (void)ctx.take<Token>(1);
+  auto typeName = ctx.take<TypeExprPtr>(2);
+  auto field =
+      std::make_unique<ast::StructField>(tokenLexeme(nameTok), std::move(typeName), nameTok.loc);
+  return SemanticValue(SV::StructFieldPtr(std::move(field)));
+}
+
+SemanticValue actionEnumDecl(ReductionContext& ctx) {
+  (void)ctx.take<Token>(0);
+  (void)ctx.take<Token>(1);
+  auto nameTok = ctx.take<Token>(2);
+  (void)ctx.take<Token>(3);
+  auto variants = ctx.take<SV::EnumVariantList>(4);
+  (void)ctx.take<Token>(5);
+  (void)ctx.take<Token>(6);
+  auto node = std::make_unique<ast::EnumDecl>(tokenLexeme(nameTok), nameTok.loc);
+  for (auto& variant : variants) {
+    node->variants.push_back(std::move(variant));
+  }
+  return SemanticValue(SV::ASTNodePtr(std::move(node)));
+}
+
+SemanticValue actionEnumVariantListSome(ReductionContext& ctx) {
+  return SemanticValue(ctx.take<SV::EnumVariantList>(0));
+}
+
+SemanticValue actionEnumVariantListNone(ReductionContext&) {
+  return SemanticValue(SV::EnumVariantList{});
+}
+
+SemanticValue actionEnumVariantListBuild(ReductionContext& ctx) {
+  auto first = ctx.take<SV::EnumVariantPtr>(0);
+  auto tail = ctx.take<SV::EnumVariantList>(1);
+  SV::EnumVariantList list;
+  list.push_back(std::move(first));
+  for (auto& entry : tail) {
+    list.push_back(std::move(entry));
+  }
+  return SemanticValue(std::move(list));
+}
+
+SemanticValue actionEnumVariantTailAppend(ReductionContext& ctx) {
+  (void)ctx.take<Token>(0);
+  auto variant = ctx.take<SV::EnumVariantPtr>(1);
+  auto tail = ctx.take<SV::EnumVariantList>(2);
+  SV::EnumVariantList list;
+  list.push_back(std::move(variant));
+  for (auto& entry : tail) {
+    list.push_back(std::move(entry));
+  }
+  return SemanticValue(std::move(list));
+}
+
+SemanticValue actionEnumVariantTailEmpty(ReductionContext&) {
+  return SemanticValue(SV::EnumVariantList{});
+}
+
+SemanticValue actionEnumVariantPayloadSome(ReductionContext& ctx) {
+  (void)ctx.take<Token>(0);
+  return SemanticValue(ctx.take<TypeExprPtr>(1));
+}
+
+SemanticValue actionEnumVariantPayloadNone(ReductionContext&) {
+  return SemanticValue(TypeExprPtr{});
+}
+
+SemanticValue actionEnumVariant(ReductionContext& ctx) {
+  auto nameTok = ctx.take<Token>(0);
+  auto payload = ctx.take<TypeExprPtr>(1);
+  auto variant =
+      std::make_unique<ast::EnumVariant>(tokenLexeme(nameTok), std::move(payload), nameTok.loc);
+  return SemanticValue(SV::EnumVariantPtr(std::move(variant)));
 }
 
 SemanticValue actionFunctionDecl(ReductionContext& ctx) {
@@ -208,6 +346,12 @@ SemanticValue actionParameterDecl(ReductionContext& ctx) {
 SemanticValue actionTypeNameKeyword(ReductionContext& ctx) {
   auto tok = ctx.take<Token>(0);
   auto type = std::make_unique<ast::TypePrimitiveExpr>(tokenToTypeKind(tok), tok.loc);
+  return SemanticValue(TypeExprPtr(std::move(type)));
+}
+
+SemanticValue actionTypeNameIdentifier(ReductionContext& ctx) {
+  auto tok = ctx.take<Token>(0);
+  auto type = std::make_unique<ast::NamedTypeExpr>(tokenLexeme(tok), tok.loc);
   return SemanticValue(TypeExprPtr(std::move(type)));
 }
 
@@ -504,6 +648,15 @@ SemanticValue actionExpressionPass(ReductionContext& ctx) {
   return SemanticValue(ctx.take<SV::ExpressionPtr>(0));
 }
 
+SemanticValue actionFieldAccess(ReductionContext& ctx) {
+  auto base = ctx.take<SV::ExpressionPtr>(0);
+  (void)ctx.take<Token>(1);
+  auto fieldTok = ctx.take<Token>(2);
+  auto node = std::make_unique<ast::FieldAccessExpr>(tokenLexeme(fieldTok), fieldTok.loc);
+  node->base = std::move(base);
+  return SemanticValue(SV::ExpressionPtr(std::move(node)));
+}
+
 SemanticValue actionBinaryExpr(ReductionContext& ctx) {
   auto lhs = ctx.take<SV::ExpressionPtr>(0);
   auto op = ctx.take<Token>(1);
@@ -543,6 +696,62 @@ SemanticValue actionArrayLiteral(ReductionContext& ctx) {
     node->elements.push_back(std::move(element));
   }
   return SemanticValue(SV::ExpressionPtr(std::move(node)));
+}
+
+SemanticValue actionStructLiteral(ReductionContext& ctx) {
+  auto nameTok = ctx.take<Token>(0);
+  auto lbrace = ctx.take<Token>(1);
+  auto fields = ctx.take<SV::StructFieldInitList>(2);
+  (void)ctx.take<Token>(3);
+  auto node = std::make_unique<ast::StructLiteralExpr>(tokenLexeme(nameTok), lbrace.loc);
+  for (auto& field : fields) {
+    node->fields.push_back(std::move(field));
+  }
+  return SemanticValue(SV::ExpressionPtr(std::move(node)));
+}
+
+SemanticValue actionStructFieldInitListSome(ReductionContext& ctx) {
+  return SemanticValue(ctx.take<SV::StructFieldInitList>(0));
+}
+
+SemanticValue actionStructFieldInitListNone(ReductionContext&) {
+  return SemanticValue(SV::StructFieldInitList{});
+}
+
+SemanticValue actionStructFieldInitListBuild(ReductionContext& ctx) {
+  auto first = ctx.take<SV::StructFieldInitPtr>(0);
+  auto tail = ctx.take<SV::StructFieldInitList>(1);
+  SV::StructFieldInitList list;
+  list.push_back(std::move(first));
+  for (auto& entry : tail) {
+    list.push_back(std::move(entry));
+  }
+  return SemanticValue(std::move(list));
+}
+
+SemanticValue actionStructFieldInitTailAppend(ReductionContext& ctx) {
+  (void)ctx.take<Token>(0);
+  auto field = ctx.take<SV::StructFieldInitPtr>(1);
+  auto tail = ctx.take<SV::StructFieldInitList>(2);
+  SV::StructFieldInitList list;
+  list.push_back(std::move(field));
+  for (auto& entry : tail) {
+    list.push_back(std::move(entry));
+  }
+  return SemanticValue(std::move(list));
+}
+
+SemanticValue actionStructFieldInitTailEmpty(ReductionContext&) {
+  return SemanticValue(SV::StructFieldInitList{});
+}
+
+SemanticValue actionStructFieldInit(ReductionContext& ctx) {
+  auto nameTok = ctx.take<Token>(0);
+  (void)ctx.take<Token>(1);
+  auto value = ctx.take<SV::ExpressionPtr>(2);
+  auto node = std::make_unique<ast::StructFieldInit>(tokenLexeme(nameTok), nameTok.loc);
+  node->value = std::move(value);
+  return SemanticValue(SV::StructFieldInitPtr(std::move(node)));
 }
 
 } // namespace

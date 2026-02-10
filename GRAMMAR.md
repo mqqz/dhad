@@ -6,6 +6,7 @@ program ::= { top_level } EOF ;
 Top Level
 top_level ::= import
             | function
+            | type_decl
             | statement ;
 
 Import
@@ -13,6 +14,18 @@ import ::= KW_IMPORT identifier ";" ;
 
 Function
 function ::= KW_FN identifier "(" [ parameters ] ")" [ ":" type ] block ;
+
+Type Declaration
+type_decl ::= KW_TYPE struct_decl
+            | KW_TYPE enum_decl ;
+
+struct_decl ::= KW_STRUCT identifier "{" [ struct_fields ] "}" ";" ;
+struct_fields ::= struct_field { "،" struct_field } ;
+struct_field ::= identifier ":" type ;
+
+enum_decl ::= KW_ENUM identifier "{" [ enum_variants ] "}" ";" ;
+enum_variants ::= enum_variant { "،" enum_variant } ;
+enum_variant ::= identifier [ ":" type ] ;
 
 Parameters
 parameters ::= parameter { "," parameter } ;
@@ -28,6 +41,7 @@ type_primary ::= KW_INT
                | KW_CHAR
                | KW_STRING
                | KW_NULL
+               | identifier
                | "[" type "]"
                | "(" type ")"
                | "(" type "،" type { "،" type } ")" ;
@@ -118,7 +132,15 @@ primary ::= number
           | KW_NULL
           | identifier
           | call_stmt
+          | struct_literal
+          | field_access
           | "(" expression ")" ;
+
+struct_literal ::= identifier "{" [ field_inits ] "}" ;
+field_inits ::= field_init { "،" field_init } ;
+field_init ::= identifier ":" expression ;
+
+field_access ::= primary "." identifier ;
 
 --------------------------------------------------
 -- Lexical

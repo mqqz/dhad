@@ -105,8 +105,10 @@ struct CodeGenModule::Impl {
     void visit(const ast::UnaryExpr& node) override { value = impl.emitUnaryExpr(node); }
     void visit(const ast::LiteralExpr& node) override { value = impl.emitLiteralExpr(node); }
     void visit(const ast::IdentifierExpr& node) override { value = impl.emitIdentifierExpr(node); }
+    void visit(const ast::FieldAccessExpr& node) override { value = impl.emitFieldAccessExpr(node); }
     void visit(const ast::CallExpr& node) override { value = impl.emitCallExpr(node); }
     void visit(const ast::ArrayLiteralExpr& node) override { value = impl.emitArrayLiteral(node); }
+    void visit(const ast::StructLiteralExpr& node) override { value = impl.emitStructLiteral(node); }
 
     llvm::Value* value{nullptr};
 
@@ -134,8 +136,10 @@ private:
   llvm::Value* emitUnaryExpr(const ast::UnaryExpr& expr);
   llvm::Value* emitLiteralExpr(const ast::LiteralExpr& expr);
   llvm::Value* emitIdentifierExpr(const ast::IdentifierExpr& expr);
+  llvm::Value* emitFieldAccessExpr(const ast::FieldAccessExpr& expr);
   llvm::Value* emitCallExpr(const ast::CallExpr& expr);
   llvm::Value* emitArrayLiteral(const ast::ArrayLiteralExpr& expr);
+  llvm::Value* emitStructLiteral(const ast::StructLiteralExpr& expr);
   llvm::Value* emitArithmeticBinary(ArithmeticOp op, llvm::Value* lhs, llvm::Value* rhs);
   llvm::Value* emitLogicalBinary(LogicalOp op, llvm::Value* lhs, llvm::Value* rhs);
   llvm::Value* emitComparisonBinary(ComparisonOp op, llvm::Value* lhs, llvm::Value* rhs);
@@ -172,6 +176,9 @@ private:
   llvm::Value* ensureInteger(llvm::Value* value);
   llvm::Value* ensureFloat(llvm::Value* value);
   bool promoteNumericOperands(llvm::Value*& lhs, llvm::Value*& rhs, bool& useFloat);
+  llvm::StructType* getStructType(const ast::StructDecl& decl);
+  llvm::StructType* getStructTypeByName(std::string_view name);
+  const ast::StructDecl* findStructDecl(std::string_view name) const;
 
   std::string moduleName;
   llvm::LLVMContext context;
@@ -182,6 +189,9 @@ private:
   std::vector<std::unordered_map<std::string, llvm::AllocaInst*>> scopes;
   std::vector<LoopContext> loopStack;
   std::unordered_map<const ast::FunctionDecl*, llvm::Function*> functions;
+  std::unordered_map<std::string, const ast::StructDecl*> structDecls;
+  std::unordered_map<std::string, const ast::EnumDecl*> enumDecls;
+  std::unordered_map<std::string, llvm::StructType*> structTypes;
   bool stdRuntimeInjected{false};
   stdlib::StdRuntime stdRuntime;
 };
@@ -189,8 +199,19 @@ private:
 bool CodeGenModule::Impl::generate(const ast::Program& program) {
   module = std::make_unique<llvm::Module>(moduleName, context);
   functions.clear();
+  structDecls.clear();
+  enumDecls.clear();
+  structTypes.clear();
   stdRuntimeInjected = false;
   bool ok = true;
+
+  for (const auto& node : program.topLevel) {
+    if (auto* decl = llvm::dyn_cast<ast::StructDecl>(node.get())) {
+      structDecls.emplace(decl->name, decl);
+    } else if (auto* decl = llvm::dyn_cast<ast::EnumDecl>(node.get())) {
+      enumDecls.emplace(decl->name, decl);
+    }
+  }
 
   for (const auto& node : program.topLevel) {
     if (auto* fn = llvm::dyn_cast<ast::FunctionDecl>(node.get())) {
@@ -217,6 +238,46 @@ llvm::PointerType* CodeGenModule::Impl::getBytePtrType() {
   return llvm::PointerType::get(context, 0);
 }
 
+const ast::StructDecl* CodeGenModule::Impl::findStructDecl(std::string_view name) const {
+  auto it = structDecls.find(std::string(name));
+  if (it == structDecls.end()) {
+    return nullptr;
+  }
+  return it->second;
+}
+
+llvm::StructType* CodeGenModule::Impl::getStructTypeByName(std::string_view name) {
+  auto it = structTypes.find(std::string(name));
+  if (it != structTypes.end()) {
+    return it->second;
+  }
+  const auto* decl = findStructDecl(name);
+  if (!decl) {
+    return nullptr;
+  }
+  return getStructType(*decl);
+}
+
+llvm::StructType* CodeGenModule::Impl::getStructType(const ast::StructDecl& decl) {
+  auto it = structTypes.find(decl.name);
+  if (it != structTypes.end()) {
+    return it->second;
+  }
+  auto* type = llvm::StructType::create(context, decl.name);
+  structTypes.emplace(decl.name, type);
+  std::vector<llvm::Type*> members;
+  members.reserve(decl.fields.size());
+  for (const auto& field : decl.fields) {
+    auto* fieldType = getTypeByExpr(field->type.get());
+    if (!fieldType) {
+      return nullptr;
+    }
+    members.push_back(fieldType);
+  }
+  type->setBody(members, /*isPacked=*/false);
+  return type;
+}
+
 llvm::Type* CodeGenModule::Impl::getTypeByExpr(const ast::TypeExpr* type) {
   if (!type) {
     return nullptr;
@@ -237,6 +298,15 @@ llvm::Type* CodeGenModule::Impl::getTypeByExpr(const ast::TypeExpr* type) {
     default:
       return nullptr;
     }
+  }
+  if (auto* named = llvm::dyn_cast<ast::NamedTypeExpr>(type)) {
+    if (structDecls.find(named->name) != structDecls.end()) {
+      return getStructTypeByName(named->name);
+    }
+    if (enumDecls.find(named->name) != enumDecls.end()) {
+      return getBytePtrType();
+    }
+    return nullptr;
   }
   if (llvm::isa<ast::TypeArrayExpr>(type)) {
     return getBytePtrType();
@@ -736,6 +806,37 @@ llvm::Value* CodeGenModule::Impl::emitIdentifierExpr(const ast::IdentifierExpr& 
   return builder.CreateLoad(alloca->getAllocatedType(), alloca, expr.name);
 }
 
+llvm::Value* CodeGenModule::Impl::emitFieldAccessExpr(const ast::FieldAccessExpr& expr) {
+  if (!expr.base) {
+    return nullptr;
+  }
+  auto* baseValue = emitExpression(expr.base.get());
+  if (!baseValue) {
+    return nullptr;
+  }
+  auto baseType = expr.base->resolvedType();
+  if (!baseType || baseType->kind != typing::TypeKind::Product) {
+    return nullptr;
+  }
+  const auto& product = std::get<typing::ProductTypeInfo>(baseType->payload);
+  if (product.name.empty()) {
+    return nullptr;
+  }
+  const auto* decl = findStructDecl(product.name);
+  if (!decl) {
+    return nullptr;
+  }
+  std::size_t index = 0;
+  for (const auto& field : decl->fields) {
+    if (field->name == expr.field) {
+      return builder.CreateExtractValue(baseValue, {static_cast<unsigned>(index)},
+                                        expr.field);
+    }
+    index++;
+  }
+  return nullptr;
+}
+
 llvm::Value* CodeGenModule::Impl::emitCallExpr(const ast::CallExpr& expr) {
   llvm::Function* callee = getOrDeclareFunction(expr.callee);
   if (!callee) {
@@ -763,6 +864,46 @@ llvm::Value* CodeGenModule::Impl::emitCallExpr(const ast::CallExpr& expr) {
 llvm::Value* CodeGenModule::Impl::emitArrayLiteral(const ast::ArrayLiteralExpr& expr) {
   (void)expr;
   return nullptr;
+}
+
+llvm::Value* CodeGenModule::Impl::emitStructLiteral(const ast::StructLiteralExpr& expr) {
+  const auto* decl = findStructDecl(expr.typeName);
+  if (!decl) {
+    return nullptr;
+  }
+  auto* structTy = getStructType(*decl);
+  if (!structTy) {
+    return nullptr;
+  }
+
+  std::unordered_map<std::string, const ast::StructFieldInit*> initMap;
+  initMap.reserve(expr.fields.size());
+  for (const auto& init : expr.fields) {
+    if (init) {
+      initMap[init->name] = init.get();
+    }
+  }
+
+  llvm::Value* value = llvm::UndefValue::get(structTy);
+  unsigned index = 0;
+  for (const auto& field : decl->fields) {
+    auto it = initMap.find(field->name);
+    if (it == initMap.end()) {
+      return nullptr;
+    }
+    auto* fieldValue = emitExpression(it->second->value.get());
+    if (!fieldValue) {
+      return nullptr;
+    }
+    auto* fieldTy = structTy->getElementType(index);
+    fieldValue = convertToType(fieldValue, fieldTy);
+    if (!fieldValue) {
+      return nullptr;
+    }
+    value = builder.CreateInsertValue(value, fieldValue, {index}, field->name);
+    index++;
+  }
+  return value;
 }
 
 llvm::Value* CodeGenModule::Impl::emitArithmeticBinary(ArithmeticOp op, llvm::Value* lhs,

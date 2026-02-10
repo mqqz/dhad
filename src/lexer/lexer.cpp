@@ -18,7 +18,7 @@ static const std::unordered_map<char32_t, TokenType> singleCharTokens = {
     {U'(', TokenType::LPAREN},  {U')', TokenType::RPAREN},    {U'{', TokenType::LBRACE},
     {U'}', TokenType::RBRACE},  {U'[', TokenType::LBRACKET},  {U']', TokenType::RBRACKET},
     {U',', TokenType::COMMA},   {U'،', TokenType::COMMA},     {U'؛', TokenType::SEMICOLON},
-    {U':', TokenType::COLON},
+    {U':', TokenType::COLON},   {U'.', TokenType::DOT},
     {U'=', TokenType::ASSIGN},  {U'+', TokenType::PLUS},      {U'-', TokenType::MINUS},
     {U'*', TokenType::MUL},     {U'/', TokenType::DIV},       {U'<', TokenType::LESS},
     {U'>', TokenType::GREATER}, {U'|', TokenType::PIPE},
@@ -100,7 +100,7 @@ bool Lexer::isIdentChar(char32_t cp) const {
   if (cp == U'_') {
     return true;
   }
-  if (cp == U'؛' || cp == U'،') {
+  if (cp == U'؛' || cp == U'،' || cp == U'.') {
     return false;
   }
 

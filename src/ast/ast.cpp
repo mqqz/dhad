@@ -47,6 +47,40 @@ public:
     os << "ImportDecl module=\"" << node.module << "\"\n";
   }
 
+  void visit(const StructDecl& node) override {
+    indent();
+    os << "StructDecl " << node.name << '\n';
+    visitNodeVec(node.fields, "Fields");
+  }
+
+  void visit(const EnumDecl& node) override {
+    indent();
+    os << "EnumDecl " << node.name << '\n';
+    visitNodeVec(node.variants, "Variants");
+  }
+
+  void visit(const StructField& node) override {
+    indent();
+    os << "StructField " << node.name << '\n';
+    if (node.type) {
+      indent();
+      os << "Type:\n";
+      IndentGuard guard(*this);
+      node.type->accept(*this);
+    }
+  }
+
+  void visit(const EnumVariant& node) override {
+    indent();
+    os << "EnumVariant " << node.name << '\n';
+    if (node.payload) {
+      indent();
+      os << "Payload:\n";
+      IndentGuard guard(*this);
+      node.payload->accept(*this);
+    }
+  }
+
   void visit(const FunctionDecl& node) override {
     indent();
     os << "FunctionDecl " << node.name;
@@ -165,6 +199,12 @@ public:
     os << "Identifier " << node.name << '\n';
   }
 
+  void visit(const FieldAccessExpr& node) override {
+    indent();
+    os << "FieldAccess " << node.field << '\n';
+    visitNode(node.base, "Base");
+  }
+
   void visit(const CallExpr& node) override {
     indent();
     os << "CallExpr callee=" << node.callee << '\n';
@@ -177,9 +217,26 @@ public:
     visitNodeVec(node.elements, "Elements");
   }
 
+  void visit(const StructFieldInit& node) override {
+    indent();
+    os << "StructFieldInit " << node.name << '\n';
+    visitNode(node.value, "Value");
+  }
+
+  void visit(const StructLiteralExpr& node) override {
+    indent();
+    os << "StructLiteral " << node.typeName << '\n';
+    visitNodeVec(node.fields, "Fields");
+  }
+
   void visit(const TypePrimitiveExpr& node) override {
     indent();
     os << "TypePrimitive " << typeKindName(node.kind) << '\n';
+  }
+
+  void visit(const NamedTypeExpr& node) override {
+    indent();
+    os << "TypeName " << node.name << '\n';
   }
 
   void visit(const TypeArrayExpr& node) override {
@@ -251,6 +308,18 @@ const char* ASTNode::kindName(Kind kind) {
     return "FunctionDecl";
   case Kind::Parameter:
     return "Parameter";
+  case Kind::StructDecl:
+    return "StructDecl";
+  case Kind::EnumDecl:
+    return "EnumDecl";
+  case Kind::StructField:
+    return "StructField";
+  case Kind::EnumVariant:
+    return "EnumVariant";
+  case Kind::StructFieldInit:
+    return "StructFieldInit";
+  case Kind::FieldAccessExpr:
+    return "FieldAccessExpr";
   case Kind::BlockStmt:
     return "BlockStmt";
   case Kind::StatementList:
@@ -285,6 +354,8 @@ const char* ASTNode::kindName(Kind kind) {
     return "TypeSumExpr";
   case Kind::TypeProductExpr:
     return "TypeProductExpr";
+  case Kind::NamedTypeExpr:
+    return "NamedTypeExpr";
   case Kind::Expression:
     return "Expression";
   case Kind::BinaryExpr:
@@ -299,6 +370,8 @@ const char* ASTNode::kindName(Kind kind) {
     return "CallExpr";
   case Kind::ArrayLiteralExpr:
     return "ArrayLiteralExpr";
+  case Kind::StructLiteralExpr:
+    return "StructLiteralExpr";
   }
   return "Unknown";
 }
@@ -318,6 +391,20 @@ Program::Program() : NodeWithKind<Program, ASTNode::Kind::Program>(SourceLocatio
 ImportDecl::ImportDecl(std::string moduleName, SourceLocation loc)
     : NodeWithKind<ImportDecl, ASTNode::Kind::ImportDecl>(loc), module(std::move(moduleName)) {}
 
+StructDecl::StructDecl(std::string name, SourceLocation loc)
+    : NodeWithKind<StructDecl, ASTNode::Kind::StructDecl>(loc), name(std::move(name)) {}
+
+EnumDecl::EnumDecl(std::string name, SourceLocation loc)
+    : NodeWithKind<EnumDecl, ASTNode::Kind::EnumDecl>(loc), name(std::move(name)) {}
+
+StructField::StructField(std::string name, NodePtr<TypeExpr> type, SourceLocation loc)
+    : NodeWithKind<StructField, ASTNode::Kind::StructField>(loc), name(std::move(name)),
+      type(std::move(type)) {}
+
+EnumVariant::EnumVariant(std::string name, NodePtr<TypeExpr> payload, SourceLocation loc)
+    : NodeWithKind<EnumVariant, ASTNode::Kind::EnumVariant>(loc), name(std::move(name)),
+      payload(std::move(payload)) {}
+
 Parameter::Parameter(std::string name, NodePtr<TypeExpr> type, SourceLocation loc)
     : NodeWithKind<Parameter, ASTNode::Kind::Parameter>(loc), name(std::move(name)),
       type(std::move(type)) {}
@@ -335,6 +422,10 @@ DeclarationStmt::DeclarationStmt(bool isConst, std::string identifier, SourceLoc
 TypePrimitiveExpr::TypePrimitiveExpr(typing::TypeKind kind, SourceLocation loc)
     : NodeWithKind<TypePrimitiveExpr, ASTNode::Kind::TypePrimitiveExpr, TypeExpr>(loc),
       kind(kind) {}
+
+NamedTypeExpr::NamedTypeExpr(std::string name, SourceLocation loc)
+    : NodeWithKind<NamedTypeExpr, ASTNode::Kind::NamedTypeExpr, TypeExpr>(loc),
+      name(std::move(name)) {}
 
 TypeArrayExpr::TypeArrayExpr(SourceLocation loc)
     : NodeWithKind<TypeArrayExpr, ASTNode::Kind::TypeArrayExpr, TypeExpr>(loc) {}
@@ -383,10 +474,22 @@ IdentifierExpr::IdentifierExpr(std::string identifier, SourceLocation loc)
     : NodeWithKind<IdentifierExpr, ASTNode::Kind::IdentifierExpr, Expression>(loc),
       name(std::move(identifier)) {}
 
+FieldAccessExpr::FieldAccessExpr(std::string field, SourceLocation loc)
+    : NodeWithKind<FieldAccessExpr, ASTNode::Kind::FieldAccessExpr, Expression>(loc),
+      field(std::move(field)) {}
+
 CallExpr::CallExpr(std::string callee, SourceLocation loc)
     : NodeWithKind<CallExpr, ASTNode::Kind::CallExpr, Expression>(loc), callee(std::move(callee)) {}
 
 ArrayLiteralExpr::ArrayLiteralExpr(SourceLocation loc)
     : NodeWithKind<ArrayLiteralExpr, ASTNode::Kind::ArrayLiteralExpr, Expression>(loc) {}
+
+StructFieldInit::StructFieldInit(std::string name, SourceLocation loc)
+    : NodeWithKind<StructFieldInit, ASTNode::Kind::StructFieldInit>(loc),
+      name(std::move(name)) {}
+
+StructLiteralExpr::StructLiteralExpr(std::string typeName, SourceLocation loc)
+    : NodeWithKind<StructLiteralExpr, ASTNode::Kind::StructLiteralExpr, Expression>(loc),
+      typeName(std::move(typeName)) {}
 
 } // namespace dhad::ast

@@ -22,17 +22,24 @@ struct SemanticValue {
   using BlockPtr = ast::NodePtr<ast::BlockStmt>;
   using ParameterPtr = ast::NodePtr<ast::Parameter>;
   using TypeExprPtr = ast::NodePtr<ast::TypeExpr>;
+  using StructFieldPtr = ast::NodePtr<ast::StructField>;
+  using EnumVariantPtr = ast::NodePtr<ast::EnumVariant>;
+  using StructFieldInitPtr = ast::NodePtr<ast::StructFieldInit>;
 
   using TopLevelList = std::vector<ASTNodePtr>;
   using StatementList = std::vector<StatementPtr>;
   using ParameterList = std::vector<ParameterPtr>;
   using ExpressionList = std::vector<ExpressionPtr>;
   using TypeExprList = std::vector<TypeExprPtr>;
+  using StructFieldList = std::vector<StructFieldPtr>;
+  using EnumVariantList = std::vector<EnumVariantPtr>;
+  using StructFieldInitList = std::vector<StructFieldInitPtr>;
 
   using Storage =
       std::variant<std::monostate, Token, ASTNodePtr, ProgramPtr, StatementPtr, ExpressionPtr,
-                   BlockPtr, ParameterPtr, TypeExprPtr, TopLevelList, StatementList,
-                   ParameterList, ExpressionList, TypeExprList>;
+                   BlockPtr, ParameterPtr, TypeExprPtr, StructFieldPtr, EnumVariantPtr,
+                   StructFieldInitPtr, TopLevelList, StatementList, ParameterList, ExpressionList,
+                   TypeExprList, StructFieldList, EnumVariantList, StructFieldInitList>;
 
   Storage storage;
 
@@ -45,11 +52,17 @@ struct SemanticValue {
   explicit SemanticValue(BlockPtr node) : storage(std::move(node)) {}
   explicit SemanticValue(ParameterPtr node) : storage(std::move(node)) {}
   explicit SemanticValue(TypeExprPtr node) : storage(std::move(node)) {}
+  explicit SemanticValue(StructFieldPtr node) : storage(std::move(node)) {}
+  explicit SemanticValue(EnumVariantPtr node) : storage(std::move(node)) {}
+  explicit SemanticValue(StructFieldInitPtr node) : storage(std::move(node)) {}
   explicit SemanticValue(TopLevelList list) : storage(std::move(list)) {}
   explicit SemanticValue(StatementList list) : storage(std::move(list)) {}
   explicit SemanticValue(ParameterList list) : storage(std::move(list)) {}
   explicit SemanticValue(ExpressionList list) : storage(std::move(list)) {}
   explicit SemanticValue(TypeExprList list) : storage(std::move(list)) {}
+  explicit SemanticValue(StructFieldList list) : storage(std::move(list)) {}
+  explicit SemanticValue(EnumVariantList list) : storage(std::move(list)) {}
+  explicit SemanticValue(StructFieldInitList list) : storage(std::move(list)) {}
 
   template <typename T> [[nodiscard]] bool holds() const {
     return std::holds_alternative<T>(storage);

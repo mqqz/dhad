@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <sstream>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "../std/runtime.hpp"
 
@@ -21,6 +22,18 @@ TypeCheckerResult TypeChecker::check(ast::Program& program) {
   currentFunction_ = nullptr;
   currentReturnType_ = voidType();
   loopDepth_ = 0;
+  structDecls_.clear();
+  enumDecls_.clear();
+  namedTypes_.clear();
+  resolvingTypes_.clear();
+
+  registerTypeDecls(program);
+  for (const auto& entry : structDecls_) {
+    (void)resolveNamedType(entry.first, entry.second->getLocation());
+  }
+  for (const auto& entry : enumDecls_) {
+    (void)resolveNamedType(entry.first, entry.second->getLocation());
+  }
 
   // Declare functions first so they can reference each other.
   for (auto& node : program.topLevel) {
@@ -74,6 +87,9 @@ bool TypeChecker::declareGlobalFunction(ast::FunctionDecl& fn) {
 bool TypeChecker::checkTopLevel(ast::ASTNode& node) {
   if (auto* fn = llvm::dyn_cast<ast::FunctionDecl>(&node)) {
     return checkFunction(*fn);
+  }
+  if (llvm::isa<ast::StructDecl>(&node) || llvm::isa<ast::EnumDecl>(&node)) {
+    return true;
   }
   if (auto* stmt = llvm::dyn_cast<ast::Statement>(&node)) {
     return checkStatement(*stmt);
@@ -180,7 +196,9 @@ bool TypeChecker::checkDeclaration(ast::DeclarationStmt& stmt) {
   auto initType = checkExpression(*stmt.initializer);
   TypePtr declaredType = stmt.typeName ? resolveTypeExpr(stmt.typeName.get()) : initType;
   if (!declaredType) {
-    reportError(stmt.getLocation(), "Unable to resolve declared type");
+    if (!stmt.typeName) {
+      reportError(stmt.getLocation(), "Unable to resolve declared type");
+    }
     return false;
   }
   if (!expectAssignable(stmt.initializer->getLocation(), declaredType, initType, "initializer")) {
@@ -300,8 +318,18 @@ TypePtr TypeChecker::checkExpression(ast::Expression& expr) {
     expr.setResolvedType(type);
     return type;
   }
+  if (auto* access = llvm::dyn_cast<ast::FieldAccessExpr>(&expr)) {
+    auto type = checkFieldAccess(*access);
+    expr.setResolvedType(type);
+    return type;
+  }
   if (auto* call = llvm::dyn_cast<ast::CallExpr>(&expr)) {
     auto type = checkCall(*call);
+    expr.setResolvedType(type);
+    return type;
+  }
+  if (auto* lit = llvm::dyn_cast<ast::StructLiteralExpr>(&expr)) {
+    auto type = checkStructLiteral(*lit);
     expr.setResolvedType(type);
     return type;
   }
@@ -336,8 +364,8 @@ TypePtr TypeChecker::checkBinary(ast::BinaryExpr& expr) {
       }
       const bool lhsNull = lhsType && lhsType->kind == TypeKind::Null;
       const bool rhsNull = rhsType && rhsType->kind == TypeKind::Null;
-      const bool nullPointerCompare = (lhsNull && rhsType && isPointerLike(rhsType->kind)) ||
-                                      (rhsNull && lhsType && isPointerLike(lhsType->kind));
+      const bool nullPointerCompare = (lhsNull && isNullableType(rhsType)) ||
+                                      (rhsNull && isNullableType(lhsType));
       if ((canImplicitlyConvert(lhsType, rhsType) && canImplicitlyConvert(rhsType, lhsType)) ||
           typeEquals(lhsType, rhsType) || nullPointerCompare) {
         return makePrimitive(TypeKind::Bool);
@@ -393,6 +421,41 @@ TypePtr TypeChecker::checkIdentifier(ast::IdentifierExpr& expr) {
   return type;
 }
 
+TypePtr TypeChecker::checkFieldAccess(ast::FieldAccessExpr& expr) {
+  if (!expr.base) {
+    reportError(expr.getLocation(), "Missing field access base");
+    return nullptr;
+  }
+  auto baseType = checkExpression(*expr.base);
+  if (!baseType || baseType->kind != TypeKind::Product) {
+    reportError(expr.getLocation(), "Field access requires a struct value");
+    return nullptr;
+  }
+  const auto& product = std::get<ProductTypeInfo>(baseType->payload);
+  if (product.name.empty()) {
+    reportError(expr.getLocation(), "Field access requires a named struct type");
+    return nullptr;
+  }
+  auto it = structDecls_.find(product.name);
+  if (it == structDecls_.end()) {
+    reportError(expr.getLocation(), "Unknown struct type '" + product.name + "'");
+    return nullptr;
+  }
+  const auto* decl = it->second;
+  for (const auto& field : decl->fields) {
+    if (field->name == expr.field) {
+      auto type = resolveTypeExpr(field->type.get());
+      if (!type) {
+        reportError(expr.getLocation(), "Unknown type for field '" + expr.field + "'");
+      }
+      return type;
+    }
+  }
+  reportError(expr.getLocation(), "Unknown field '" + expr.field + "' on struct '" +
+                                      decl->name + "'");
+  return nullptr;
+}
+
 TypePtr TypeChecker::checkCall(ast::CallExpr& expr) {
   auto calleeType = scopes_.lookup(expr.callee);
   if (!calleeType || calleeType->kind != TypeKind::Function) {
@@ -412,6 +475,48 @@ TypePtr TypeChecker::checkCall(ast::CallExpr& expr) {
     expectAssignable(expr.args[i]->getLocation(), fnInfo.params[i], argType, "argument");
   }
   return fnInfo.result;
+}
+
+TypePtr TypeChecker::checkStructLiteral(ast::StructLiteralExpr& expr) {
+  auto it = structDecls_.find(expr.typeName);
+  if (it == structDecls_.end()) {
+    reportError(expr.getLocation(), "Unknown struct type '" + expr.typeName + "'");
+    return nullptr;
+  }
+  const auto* decl = it->second;
+  std::unordered_map<std::string, const ast::StructField*> fields;
+  fields.reserve(decl->fields.size());
+  for (const auto& field : decl->fields) {
+    fields.emplace(field->name, field.get());
+  }
+
+  std::unordered_set<std::string> seen;
+  for (const auto& init : expr.fields) {
+    if (!init) continue;
+    if (!seen.insert(init->name).second) {
+      reportError(init->getLocation(),
+                  "Duplicate field initializer '" + init->name + "' in struct literal");
+      continue;
+    }
+    auto fit = fields.find(init->name);
+    if (fit == fields.end()) {
+      reportError(init->getLocation(),
+                  "Unknown field '" + init->name + "' in struct '" + decl->name + "'");
+      continue;
+    }
+    auto fieldType = resolveTypeExpr(fit->second->type.get());
+    auto valueType = init->value ? checkExpression(*init->value) : nullptr;
+    expectAssignable(init->getLocation(), fieldType, valueType, "field initializer");
+  }
+
+  for (const auto& field : decl->fields) {
+    if (seen.find(field->name) == seen.end()) {
+      reportError(expr.getLocation(),
+                  "Missing field '" + field->name + "' in struct literal '" + decl->name + "'");
+    }
+  }
+
+  return resolveNamedType(expr.typeName, expr.getLocation());
 }
 
 TypePtr TypeChecker::requireBoolean(ast::Expression& expr, TypePtr type) {
@@ -455,6 +560,9 @@ TypePtr TypeChecker::resolveTypeExpr(const ast::TypeExpr* type) {
   if (auto* prim = llvm::dyn_cast<ast::TypePrimitiveExpr>(type)) {
     return makePrimitive(prim->kind);
   }
+  if (auto* named = llvm::dyn_cast<ast::NamedTypeExpr>(type)) {
+    return resolveNamedType(named->name, named->getLocation());
+  }
   if (auto* array = llvm::dyn_cast<ast::TypeArrayExpr>(type)) {
     auto element = resolveTypeExpr(array->element.get());
     if (!element) {
@@ -489,6 +597,99 @@ TypePtr TypeChecker::resolveTypeExpr(const ast::TypeExpr* type) {
   return nullptr;
 }
 
+void TypeChecker::registerTypeDecls(const ast::Program& program) {
+  for (const auto& node : program.topLevel) {
+    if (auto* decl = llvm::dyn_cast<ast::StructDecl>(node.get())) {
+      if (structDecls_.find(decl->name) != structDecls_.end() ||
+          enumDecls_.find(decl->name) != enumDecls_.end()) {
+        reportError(decl->getLocation(), "Duplicate type name '" + decl->name + "'");
+        continue;
+      }
+      structDecls_.emplace(decl->name, decl);
+    } else if (auto* decl = llvm::dyn_cast<ast::EnumDecl>(node.get())) {
+      if (structDecls_.find(decl->name) != structDecls_.end() ||
+          enumDecls_.find(decl->name) != enumDecls_.end()) {
+        reportError(decl->getLocation(), "Duplicate type name '" + decl->name + "'");
+        continue;
+      }
+      enumDecls_.emplace(decl->name, decl);
+    }
+  }
+}
+
+TypePtr TypeChecker::resolveNamedType(std::string_view name, const SourceLocation& loc) {
+  const std::string key(name);
+  if (auto it = namedTypes_.find(key); it != namedTypes_.end()) {
+    return it->second;
+  }
+  if (resolvingTypes_.find(key) != resolvingTypes_.end()) {
+    reportError(loc, "Recursive type definition for '" + std::string(name) + "'");
+    return nullptr;
+  }
+
+  const ast::StructDecl* structDecl = nullptr;
+  const ast::EnumDecl* enumDecl = nullptr;
+  if (auto it = structDecls_.find(key); it != structDecls_.end()) {
+    structDecl = it->second;
+  } else if (auto it = enumDecls_.find(key); it != enumDecls_.end()) {
+    enumDecl = it->second;
+  } else {
+    reportError(loc, "Unknown type '" + std::string(name) + "'");
+    return nullptr;
+  }
+
+  resolvingTypes_.insert(key);
+  TypePtr result;
+  if (structDecl) {
+    std::unordered_set<std::string> seen;
+    std::vector<TypePtr> members;
+    members.reserve(structDecl->fields.size());
+    for (const auto& field : structDecl->fields) {
+      if (!seen.insert(field->name).second) {
+        reportError(field->getLocation(), "Duplicate field '" + field->name + "' in struct '" +
+                                            structDecl->name + "'");
+        continue;
+      }
+      auto memberType = resolveTypeExpr(field->type.get());
+      if (!memberType) {
+        resolvingTypes_.erase(key);
+        return nullptr;
+      }
+      members.push_back(std::move(memberType));
+    }
+    result = makeProduct(std::move(members), structDecl->name);
+  } else if (enumDecl) {
+    std::unordered_set<std::string> seen;
+    std::vector<TypePtr> variants;
+    variants.reserve(enumDecl->variants.size());
+    for (const auto& variant : enumDecl->variants) {
+      if (!seen.insert(variant->name).second) {
+        reportError(variant->getLocation(), "Duplicate variant '" + variant->name +
+                                               "' in enum '" + enumDecl->name + "'");
+        continue;
+      }
+      TypePtr variantType;
+      if (variant->payload) {
+        variantType = resolveTypeExpr(variant->payload.get());
+      } else {
+        variantType = makePrimitive(TypeKind::Null);
+      }
+      if (!variantType) {
+        resolvingTypes_.erase(key);
+        return nullptr;
+      }
+      variants.push_back(std::move(variantType));
+    }
+    result = makeSum(std::move(variants), enumDecl->name);
+  }
+
+  if (result) {
+    namedTypes_.emplace(key, result);
+  }
+  resolvingTypes_.erase(key);
+  return result;
+}
+
 bool TypeChecker::typeEquals(const TypePtr& lhs, const TypePtr& rhs) const {
   if (lhs == rhs) {
     return true;
@@ -507,6 +708,9 @@ bool TypeChecker::typeEquals(const TypePtr& lhs, const TypePtr& rhs) const {
   if (lhs->kind == TypeKind::Sum) {
     const auto& la = std::get<SumTypeInfo>(lhs->payload);
     const auto& rb = std::get<SumTypeInfo>(rhs->payload);
+    if (la.name != rb.name) {
+      return false;
+    }
     if (la.variants.size() != rb.variants.size()) {
       return false;
     }
@@ -520,6 +724,9 @@ bool TypeChecker::typeEquals(const TypePtr& lhs, const TypePtr& rhs) const {
   if (lhs->kind == TypeKind::Product) {
     const auto& la = std::get<ProductTypeInfo>(lhs->payload);
     const auto& rb = std::get<ProductTypeInfo>(rhs->payload);
+    if (la.name != rb.name) {
+      return false;
+    }
     if (la.members.size() != rb.members.size()) {
       return false;
     }
@@ -559,11 +766,23 @@ bool TypeChecker::isPointerLike(TypeKind kind) const {
   case TypeKind::String:
   case TypeKind::Array:
   case TypeKind::Sum:
+    return true;
   case TypeKind::Product:
     return true;
   default:
     return false;
   }
+}
+
+bool TypeChecker::isNullableType(const TypePtr& type) const {
+  if (!type) {
+    return false;
+  }
+  if (type->kind == TypeKind::Product) {
+    const auto& product = std::get<ProductTypeInfo>(type->payload);
+    return product.name.empty();
+  }
+  return isPointerLike(type->kind);
 }
 
 TypePtr TypeChecker::arithmeticResultType(const TypePtr& lhs, const TypePtr& rhs) const {
@@ -596,7 +815,7 @@ bool TypeChecker::canImplicitlyConvert(const TypePtr& from, const TypePtr& to) c
       to->kind == TypeKind::Float) {
     return true;
   }
-  if (from->kind == TypeKind::Null && isPointerLike(to->kind)) {
+  if (from->kind == TypeKind::Null && isNullableType(to)) {
     return true;
   }
   if (to->kind == TypeKind::Sum) {

@@ -229,6 +229,18 @@ if(BUILD_TESTING)
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/parser_smoke.txt")
 
   add_test(
+    NAME type_decl_parser
+    COMMAND
+      "${DHAD_TEST_PYTHON}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_lang_tests.py"
+      --driver
+      "$<TARGET_FILE:lang_driver>"
+      --case
+      parser
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/type_decl_smoke.dh"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/type_decl_smoke.txt")
+
+  add_test(
     NAME codegen_example
     COMMAND "${DHAD_TEST_PYTHON}"
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_codegen_tests.py"
@@ -243,6 +255,16 @@ if(BUILD_TESTING)
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_codegen_tests.py"
             --codegen "$<TARGET_FILE:codegen_ex1>"
             --example "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/float_runtime.dh"
+            --opt "${LLVM_TOOLS_BINARY_DIR}/opt"
+            --lli "${LLVM_TOOLS_BINARY_DIR}/lli"
+            --expected "ok\n")
+
+  add_test(
+    NAME struct_runtime
+    COMMAND "${DHAD_TEST_PYTHON}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_codegen_tests.py"
+            --codegen "$<TARGET_FILE:codegen_ex1>"
+            --example "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/struct_runtime.dh"
             --opt "${LLVM_TOOLS_BINARY_DIR}/opt"
             --lli "${LLVM_TOOLS_BINARY_DIR}/lli"
             --expected "ok\n")
@@ -321,6 +343,17 @@ if(BUILD_TESTING)
       --case
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/type_mismatch_array.dh"
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/type_mismatch_array.txt")
+
+  add_test(
+    NAME unknown_type
+    COMMAND
+      "${DHAD_TEST_PYTHON}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_dhad_tests.py"
+      --driver
+      "$<TARGET_FILE:dhad>"
+      --case
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/unknown_type.dh"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/unknown_type.txt")
 
   add_test(
     NAME composite_codegen
