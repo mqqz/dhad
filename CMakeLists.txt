@@ -365,4 +365,48 @@ if(BUILD_TESTING)
       --case
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/composite_codegen.dh"
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/composite_ir_contains.txt")
+
+  add_test(
+    NAME array_literal_codegen
+    COMMAND
+      "${DHAD_TEST_PYTHON}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_dhad_ir_tests.py"
+      --driver
+      "$<TARGET_FILE:dhad>"
+      --case
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/array_literal_codegen.dh"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/array_literal_ir_contains.txt")
+
+  add_test(
+    NAME arabic_digits_codegen
+    COMMAND
+      "${DHAD_TEST_PYTHON}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_dhad_ir_tests.py"
+      --driver
+      "$<TARGET_FILE:dhad>"
+      --case
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/arabic_digits_codegen.dh"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/arabic_digits_ir_contains.txt")
+
+  add_test(
+    NAME array_index_runtime_codegen
+    COMMAND
+      "${DHAD_TEST_PYTHON}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_dhad_ir_tests.py"
+      --driver
+      "$<TARGET_FILE:dhad>"
+      --case
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/array_index_runtime.dh"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/array_index_ir_contains.txt")
+
+  add_test(
+    NAME array_index_write_codegen
+    COMMAND
+      "${DHAD_TEST_PYTHON}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_dhad_ir_tests.py"
+      --driver
+      "$<TARGET_FILE:dhad>"
+      --case
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/array_index_write_runtime.dh"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/array_index_write_ir_contains.txt")
 endif()

@@ -49,6 +49,7 @@ private:
   bool checkStatement(ast::Statement& stmt);
   bool checkDeclaration(ast::DeclarationStmt& stmt);
   bool checkAssignment(ast::AssignmentStmt& stmt);
+  bool checkIndexAssignment(ast::IndexAssignmentStmt& stmt);
   bool checkIf(ast::IfStmt& stmt);
   bool checkWhile(ast::WhileStmt& stmt);
   bool checkFor(ast::ForStmt& stmt);
@@ -63,7 +64,9 @@ private:
   TypePtr checkLiteral(ast::LiteralExpr& expr);
   TypePtr checkIdentifier(ast::IdentifierExpr& expr);
   TypePtr checkFieldAccess(ast::FieldAccessExpr& expr);
+  TypePtr checkIndexAccess(ast::IndexExpr& expr);
   TypePtr checkCall(ast::CallExpr& expr);
+  TypePtr checkArrayLiteral(ast::ArrayLiteralExpr& expr);
   TypePtr checkStructLiteral(ast::StructLiteralExpr& expr);
 
   TypePtr requireBoolean(ast::Expression& expr, TypePtr type);

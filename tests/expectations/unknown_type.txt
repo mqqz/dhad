@@ -1,0 +1,1 @@
+tests/sources/unknown_type.dh:2:11: error: Unknown type 'مجهول'

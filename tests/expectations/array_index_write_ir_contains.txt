@@ -1,0 +1,3 @@
+arr.elem.ptr
+store i32 99
+@llvm.trap

@@ -15,6 +15,29 @@ class raw_ostream;
 
 namespace dhad::ast {
 
+enum class BinaryOp : uint8_t {
+  Add,
+  Sub,
+  Mul,
+  Div,
+  And,
+  Or,
+  Eq,
+  Ne,
+  Lt,
+  Le,
+  Gt,
+  Ge,
+};
+
+enum class UnaryOp : uint8_t {
+  Negate,
+  Not,
+};
+
+const char* binaryOpName(BinaryOp op);
+const char* unaryOpName(UnaryOp op);
+
 #define DHAD_AST_FOR_EACH_CONCRETE_NODE(M)                                                         \
   M(Program)                                                                                       \
   M(ImportDecl)                                                                                    \
@@ -33,6 +56,7 @@ namespace dhad::ast {
   M(BlockStmt)                                                                                     \
   M(DeclarationStmt)                                                                               \
   M(AssignmentStmt)                                                                                \
+  M(IndexAssignmentStmt)                                                                           \
   M(IfStmt)                                                                                        \
   M(WhileStmt)                                                                                     \
   M(ForStmt)                                                                                       \
@@ -45,6 +69,7 @@ namespace dhad::ast {
   M(LiteralExpr)                                                                                   \
   M(IdentifierExpr)                                                                                \
   M(FieldAccessExpr)                                                                               \
+  M(IndexExpr)                                                                                     \
   M(CallExpr)                                                                                      \
   M(ArrayLiteralExpr)                                                                              \
   M(StructLiteralExpr)
@@ -82,6 +107,7 @@ public:
     StatementList,
     DeclarationStmt,
     AssignmentStmt,
+    IndexAssignmentStmt,
     FlowStmt,
     IfStmt,
     WhileStmt,
@@ -102,6 +128,7 @@ public:
     LiteralExpr,
     IdentifierExpr,
     FieldAccessExpr,
+    IndexExpr,
     CallExpr,
     ArrayLiteralExpr,
     StructLiteralExpr
@@ -202,6 +229,7 @@ struct Expression : Statement {
     case Kind::LiteralExpr:
     case Kind::IdentifierExpr:
     case Kind::FieldAccessExpr:
+    case Kind::IndexExpr:
     case Kind::CallExpr:
     case Kind::ArrayLiteralExpr:
     case Kind::StructLiteralExpr:
@@ -330,6 +358,20 @@ struct AssignmentStmt : NodeWithKind<AssignmentStmt, ASTNode::Kind::AssignmentSt
   AssignmentStmt(std::string identifier, SourceLocation loc);
 };
 
+struct IndexAssignmentStmt
+    : NodeWithKind<IndexAssignmentStmt, ASTNode::Kind::IndexAssignmentStmt, Statement> {
+  std::string target;
+  NodePtr<Expression> index;
+  NodePtr<Expression> value;
+  [[nodiscard]] typing::TypePtr resolvedElementType() const { return elementType_; }
+  void setResolvedElementType(typing::TypePtr type) { elementType_ = std::move(type); }
+
+  IndexAssignmentStmt(std::string identifier, SourceLocation loc);
+
+private:
+  typing::TypePtr elementType_;
+};
+
 struct FlowStmt : Statement {
 protected:
   FlowStmt(Kind kind, SourceLocation loc) : Statement(kind, loc) {}
@@ -378,18 +420,18 @@ struct ExpressionStmt : NodeWithKind<ExpressionStmt, ASTNode::Kind::ExpressionSt
 };
 
 struct BinaryExpr : NodeWithKind<BinaryExpr, ASTNode::Kind::BinaryExpr, Expression> {
-  std::string op;
+  BinaryOp op;
   NodePtr<Expression> lhs;
   NodePtr<Expression> rhs;
 
-  BinaryExpr(std::string op, SourceLocation loc);
+  BinaryExpr(BinaryOp op, SourceLocation loc);
 };
 
 struct UnaryExpr : NodeWithKind<UnaryExpr, ASTNode::Kind::UnaryExpr, Expression> {
-  std::string op;
+  UnaryOp op;
   NodePtr<Expression> operand;
 
-  UnaryExpr(std::string op, SourceLocation loc);
+  UnaryExpr(UnaryOp op, SourceLocation loc);
 };
 
 struct LiteralExpr : NodeWithKind<LiteralExpr, ASTNode::Kind::LiteralExpr, Expression> {
@@ -410,6 +452,13 @@ struct FieldAccessExpr
   std::string field;
 
   FieldAccessExpr(std::string field, SourceLocation loc);
+};
+
+struct IndexExpr : NodeWithKind<IndexExpr, ASTNode::Kind::IndexExpr, Expression> {
+  NodePtr<Expression> base;
+  NodePtr<Expression> index;
+
+  explicit IndexExpr(SourceLocation loc);
 };
 
 struct CallExpr : NodeWithKind<CallExpr, ASTNode::Kind::CallExpr, Expression> {

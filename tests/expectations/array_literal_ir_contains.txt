@@ -1,0 +1,5 @@
+%dhad.array = type { i32, ptr }
+call ptr @malloc(i64
+store i32 1
+store i32 2
+store i32 3

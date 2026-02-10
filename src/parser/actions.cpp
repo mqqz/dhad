@@ -505,6 +505,19 @@ SemanticValue actionAssignmentStmt(ReductionContext& ctx) {
   return SemanticValue(SV::StatementPtr(std::move(stmt)));
 }
 
+SemanticValue actionAssignmentIndexStmt(ReductionContext& ctx) {
+  auto ident = ctx.take<Token>(0);
+  (void)ctx.take<Token>(1);
+  auto index = ctx.take<SV::ExpressionPtr>(2);
+  (void)ctx.take<Token>(3);
+  (void)ctx.take<Token>(4);
+  auto value = ctx.take<SV::ExpressionPtr>(5);
+  auto stmt = std::make_unique<ast::IndexAssignmentStmt>(tokenLexeme(ident), ident.loc);
+  stmt->index = std::move(index);
+  stmt->value = std::move(value);
+  return SemanticValue(SV::StatementPtr(std::move(stmt)));
+}
+
 SemanticValue actionIfMatchedFull(ReductionContext& ctx) {
   auto ifTok = ctx.take<Token>(0);
   (void)ctx.take<Token>(1);
@@ -654,6 +667,17 @@ SemanticValue actionFieldAccess(ReductionContext& ctx) {
   auto fieldTok = ctx.take<Token>(2);
   auto node = std::make_unique<ast::FieldAccessExpr>(tokenLexeme(fieldTok), fieldTok.loc);
   node->base = std::move(base);
+  return SemanticValue(SV::ExpressionPtr(std::move(node)));
+}
+
+SemanticValue actionIndexAccess(ReductionContext& ctx) {
+  auto base = ctx.take<SV::ExpressionPtr>(0);
+  auto lbracket = ctx.take<Token>(1);
+  auto index = ctx.take<SV::ExpressionPtr>(2);
+  (void)ctx.take<Token>(3);
+  auto node = std::make_unique<ast::IndexExpr>(lbracket.loc);
+  node->base = std::move(base);
+  node->index = std::move(index);
   return SemanticValue(SV::ExpressionPtr(std::move(node)));
 }
 

@@ -151,6 +151,9 @@ bool TypeChecker::checkStatement(ast::Statement& stmt) {
   if (auto* assign = llvm::dyn_cast<ast::AssignmentStmt>(&stmt)) {
     return checkAssignment(*assign);
   }
+  if (auto* assignIndex = llvm::dyn_cast<ast::IndexAssignmentStmt>(&stmt)) {
+    return checkIndexAssignment(*assignIndex);
+  }
   if (auto* ifStmt = llvm::dyn_cast<ast::IfStmt>(&stmt)) {
     return checkIf(*ifStmt);
   }
@@ -219,6 +222,34 @@ bool TypeChecker::checkAssignment(ast::AssignmentStmt& stmt) {
   }
   auto valueType = checkExpression(*stmt.value);
   return expectAssignable(stmt.value->getLocation(), targetType, valueType, "assignment");
+}
+
+bool TypeChecker::checkIndexAssignment(ast::IndexAssignmentStmt& stmt) {
+  auto targetType = scopes_.lookup(stmt.target);
+  if (!targetType) {
+    reportError(stmt.getLocation(), "Undeclared identifier '" + stmt.target + "'");
+    return false;
+  }
+  if (targetType->kind != TypeKind::Array) {
+    reportError(stmt.getLocation(), "Index assignment requires an array target");
+    return false;
+  }
+  if (!stmt.index || !stmt.value) {
+    reportError(stmt.getLocation(), "Index assignment requires index and value");
+    return false;
+  }
+
+  auto indexType = checkExpression(*stmt.index);
+  if (!indexType || (indexType->kind != TypeKind::Int && indexType->kind != TypeKind::Char &&
+                     indexType->kind != TypeKind::Bool)) {
+    reportError(stmt.index->getLocation(), "Array index must be an integer");
+    return false;
+  }
+
+  const auto& array = std::get<ArrayTypeInfo>(targetType->payload);
+  auto valueType = checkExpression(*stmt.value);
+  stmt.setResolvedElementType(array.element);
+  return expectAssignable(stmt.value->getLocation(), array.element, valueType, "index assignment");
 }
 
 bool TypeChecker::checkIf(ast::IfStmt& stmt) {
@@ -323,8 +354,18 @@ TypePtr TypeChecker::checkExpression(ast::Expression& expr) {
     expr.setResolvedType(type);
     return type;
   }
+  if (auto* index = llvm::dyn_cast<ast::IndexExpr>(&expr)) {
+    auto type = checkIndexAccess(*index);
+    expr.setResolvedType(type);
+    return type;
+  }
   if (auto* call = llvm::dyn_cast<ast::CallExpr>(&expr)) {
     auto type = checkCall(*call);
+    expr.setResolvedType(type);
+    return type;
+  }
+  if (auto* lit = llvm::dyn_cast<ast::ArrayLiteralExpr>(&expr)) {
+    auto type = checkArrayLiteral(*lit);
     expr.setResolvedType(type);
     return type;
   }
@@ -342,8 +383,8 @@ TypePtr TypeChecker::checkBinary(ast::BinaryExpr& expr) {
   if (!lhsType || !rhsType) {
     return nullptr;
   }
-  const auto& op = expr.op;
-  if (op == "+" || op == "-" || op == "*" || op == "/") {
+  if (expr.op == ast::BinaryOp::Add || expr.op == ast::BinaryOp::Sub ||
+      expr.op == ast::BinaryOp::Mul || expr.op == ast::BinaryOp::Div) {
     auto resultType = arithmeticResultType(lhsType, rhsType);
     if (!resultType) {
       reportError(expr.getLocation(), "Arithmetic operands must be numeric");
@@ -351,13 +392,15 @@ TypePtr TypeChecker::checkBinary(ast::BinaryExpr& expr) {
     }
     return resultType;
   }
-  if (op == "and" || op == "or") {
+  if (expr.op == ast::BinaryOp::And || expr.op == ast::BinaryOp::Or) {
     requireBoolean(*expr.lhs, lhsType);
     requireBoolean(*expr.rhs, rhsType);
     return makePrimitive(TypeKind::Bool);
   }
-  if (op == "==" || op == "!=" || op == "<" || op == "<=" || op == ">" || op == ">=") {
-    if (op == "==" || op == "!=") {
+  if (expr.op == ast::BinaryOp::Eq || expr.op == ast::BinaryOp::Ne ||
+      expr.op == ast::BinaryOp::Lt || expr.op == ast::BinaryOp::Le ||
+      expr.op == ast::BinaryOp::Gt || expr.op == ast::BinaryOp::Ge) {
+    if (expr.op == ast::BinaryOp::Eq || expr.op == ast::BinaryOp::Ne) {
       auto numeric = arithmeticResultType(lhsType, rhsType);
       if (numeric) {
         return makePrimitive(TypeKind::Bool);
@@ -380,19 +423,21 @@ TypePtr TypeChecker::checkBinary(ast::BinaryExpr& expr) {
     }
     return makePrimitive(TypeKind::Bool);
   }
-  reportError(expr.getLocation(), "Unsupported binary operator '" + op + "'");
+  reportError(expr.getLocation(),
+              "Unsupported binary operator '" + std::string(ast::binaryOpName(expr.op)) + "'");
   return nullptr;
 }
 
 TypePtr TypeChecker::checkUnary(ast::UnaryExpr& expr) {
   auto operandType = checkExpression(*expr.operand);
-  if (expr.op == "-") {
+  if (expr.op == ast::UnaryOp::Negate) {
     return requireNumeric(expr, operandType);
   }
-  if (expr.op == "not") {
+  if (expr.op == ast::UnaryOp::Not) {
     return requireBoolean(expr, operandType);
   }
-  reportError(expr.getLocation(), "Unsupported unary operator '" + expr.op + "'");
+  reportError(expr.getLocation(),
+              "Unsupported unary operator '" + std::string(ast::unaryOpName(expr.op)) + "'");
   return nullptr;
 }
 
@@ -427,7 +472,18 @@ TypePtr TypeChecker::checkFieldAccess(ast::FieldAccessExpr& expr) {
     return nullptr;
   }
   auto baseType = checkExpression(*expr.base);
-  if (!baseType || baseType->kind != TypeKind::Product) {
+  if (!baseType) {
+    reportError(expr.getLocation(), "Field access requires a struct value");
+    return nullptr;
+  }
+  if (baseType->kind == TypeKind::Array) {
+    if (expr.field == u8"طول") {
+      return makePrimitive(TypeKind::Int);
+    }
+    reportError(expr.getLocation(), "Unknown field '" + expr.field + "' on array");
+    return nullptr;
+  }
+  if (baseType->kind != TypeKind::Product) {
     reportError(expr.getLocation(), "Field access requires a struct value");
     return nullptr;
   }
@@ -456,6 +512,26 @@ TypePtr TypeChecker::checkFieldAccess(ast::FieldAccessExpr& expr) {
   return nullptr;
 }
 
+TypePtr TypeChecker::checkIndexAccess(ast::IndexExpr& expr) {
+  if (!expr.base || !expr.index) {
+    reportError(expr.getLocation(), "Array index access requires base and index");
+    return nullptr;
+  }
+  auto baseType = checkExpression(*expr.base);
+  if (!baseType || baseType->kind != TypeKind::Array) {
+    reportError(expr.getLocation(), "Index access requires an array value");
+    return nullptr;
+  }
+  auto indexType = checkExpression(*expr.index);
+  if (!indexType || (indexType->kind != TypeKind::Int && indexType->kind != TypeKind::Char &&
+                     indexType->kind != TypeKind::Bool)) {
+    reportError(expr.index->getLocation(), "Array index must be an integer");
+    return nullptr;
+  }
+  const auto& info = std::get<ArrayTypeInfo>(baseType->payload);
+  return info.element;
+}
+
 TypePtr TypeChecker::checkCall(ast::CallExpr& expr) {
   auto calleeType = scopes_.lookup(expr.callee);
   if (!calleeType || calleeType->kind != TypeKind::Function) {
@@ -475,6 +551,53 @@ TypePtr TypeChecker::checkCall(ast::CallExpr& expr) {
     expectAssignable(expr.args[i]->getLocation(), fnInfo.params[i], argType, "argument");
   }
   return fnInfo.result;
+}
+
+TypePtr TypeChecker::checkArrayLiteral(ast::ArrayLiteralExpr& expr) {
+  if (expr.elements.empty()) {
+    reportError(expr.getLocation(), "Cannot infer type of empty array literal");
+    return nullptr;
+  }
+
+  std::vector<TypePtr> elementTypes;
+  elementTypes.reserve(expr.elements.size());
+  for (const auto& element : expr.elements) {
+    auto type = element ? checkExpression(*element) : nullptr;
+    if (!type) {
+      return nullptr;
+    }
+    elementTypes.push_back(std::move(type));
+  }
+
+  TypePtr elementType = elementTypes.front();
+  for (std::size_t i = 1; i < elementTypes.size(); ++i) {
+    const auto& next = elementTypes[i];
+    if (typeEquals(elementType, next)) {
+      continue;
+    }
+    if (auto promoted = arithmeticResultType(elementType, next)) {
+      elementType = std::move(promoted);
+      continue;
+    }
+    if (canImplicitlyConvert(next, elementType)) {
+      continue;
+    }
+    if (canImplicitlyConvert(elementType, next)) {
+      elementType = next;
+      continue;
+    }
+    reportError(expr.elements[i]->getLocation(), "Array literal elements must share a type");
+    return nullptr;
+  }
+
+  for (std::size_t i = 0; i < expr.elements.size(); ++i) {
+    if (!expectAssignable(expr.elements[i]->getLocation(), elementType, elementTypes[i],
+                          "array element")) {
+      return nullptr;
+    }
+  }
+
+  return makeArray(elementType);
 }
 
 TypePtr TypeChecker::checkStructLiteral(ast::StructLiteralExpr& expr) {

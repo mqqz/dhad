@@ -32,6 +32,46 @@ const char* typeKindName(typing::TypeKind kind) {
   return "unknown";
 }
 
+const char* binaryOpDisplayName(BinaryOp op) {
+  switch (op) {
+  case BinaryOp::Add:
+    return "+";
+  case BinaryOp::Sub:
+    return "-";
+  case BinaryOp::Mul:
+    return "*";
+  case BinaryOp::Div:
+    return "/";
+  case BinaryOp::And:
+    return "and";
+  case BinaryOp::Or:
+    return "or";
+  case BinaryOp::Eq:
+    return "==";
+  case BinaryOp::Ne:
+    return "!=";
+  case BinaryOp::Lt:
+    return "<";
+  case BinaryOp::Le:
+    return "<=";
+  case BinaryOp::Gt:
+    return ">";
+  case BinaryOp::Ge:
+    return ">=";
+  }
+  return "?";
+}
+
+const char* unaryOpDisplayName(UnaryOp op) {
+  switch (op) {
+  case UnaryOp::Negate:
+    return "-";
+  case UnaryOp::Not:
+    return "not";
+  }
+  return "?";
+}
+
 class DumpVisitor : public ASTVisitor {
 public:
   DumpVisitor(llvm::raw_ostream& os, unsigned indent) : os(os), currentIndent(indent) {}
@@ -132,6 +172,13 @@ public:
     visitNode(node.value, "Value");
   }
 
+  void visit(const IndexAssignmentStmt& node) override {
+    indent();
+    os << "IndexAssignment target=" << node.target << '\n';
+    visitNode(node.index, "Index");
+    visitNode(node.value, "Value");
+  }
+
   void visit(const IfStmt& node) override {
     indent();
     os << "IfStmt\n";
@@ -178,14 +225,14 @@ public:
 
   void visit(const BinaryExpr& node) override {
     indent();
-    os << "BinaryExpr op=\"" << node.op << "\"\n";
+    os << "BinaryExpr op=\"" << binaryOpDisplayName(node.op) << "\"\n";
     visitNode(node.lhs, "LHS");
     visitNode(node.rhs, "RHS");
   }
 
   void visit(const UnaryExpr& node) override {
     indent();
-    os << "UnaryExpr op=\"" << node.op << "\"\n";
+    os << "UnaryExpr op=\"" << unaryOpDisplayName(node.op) << "\"\n";
     visitNode(node.operand, "Operand");
   }
 
@@ -203,6 +250,13 @@ public:
     indent();
     os << "FieldAccess " << node.field << '\n';
     visitNode(node.base, "Base");
+  }
+
+  void visit(const IndexExpr& node) override {
+    indent();
+    os << "IndexExpr\n";
+    visitNode(node.base, "Base");
+    visitNode(node.index, "Index");
   }
 
   void visit(const CallExpr& node) override {
@@ -328,6 +382,8 @@ const char* ASTNode::kindName(Kind kind) {
     return "DeclarationStmt";
   case Kind::AssignmentStmt:
     return "AssignmentStmt";
+  case Kind::IndexAssignmentStmt:
+    return "IndexAssignmentStmt";
   case Kind::FlowStmt:
     return "FlowStmt";
   case Kind::IfStmt:
@@ -366,6 +422,8 @@ const char* ASTNode::kindName(Kind kind) {
     return "LiteralExpr";
   case Kind::IdentifierExpr:
     return "IdentifierExpr";
+  case Kind::IndexExpr:
+    return "IndexExpr";
   case Kind::CallExpr:
     return "CallExpr";
   case Kind::ArrayLiteralExpr:
@@ -440,6 +498,10 @@ AssignmentStmt::AssignmentStmt(std::string identifier, SourceLocation loc)
     : NodeWithKind<AssignmentStmt, ASTNode::Kind::AssignmentStmt, Statement>(loc),
       target(std::move(identifier)) {}
 
+IndexAssignmentStmt::IndexAssignmentStmt(std::string identifier, SourceLocation loc)
+    : NodeWithKind<IndexAssignmentStmt, ASTNode::Kind::IndexAssignmentStmt, Statement>(loc),
+      target(std::move(identifier)) {}
+
 IfStmt::IfStmt(SourceLocation loc) : NodeWithKind<IfStmt, ASTNode::Kind::IfStmt, FlowStmt>(loc) {}
 
 WhileStmt::WhileStmt(SourceLocation loc)
@@ -460,11 +522,11 @@ ContinueStmt::ContinueStmt(SourceLocation loc)
 ExpressionStmt::ExpressionStmt(SourceLocation loc)
     : NodeWithKind<ExpressionStmt, ASTNode::Kind::ExpressionStmt, Statement>(loc) {}
 
-BinaryExpr::BinaryExpr(std::string op, SourceLocation loc)
-    : NodeWithKind<BinaryExpr, ASTNode::Kind::BinaryExpr, Expression>(loc), op(std::move(op)) {}
+BinaryExpr::BinaryExpr(BinaryOp op, SourceLocation loc)
+    : NodeWithKind<BinaryExpr, ASTNode::Kind::BinaryExpr, Expression>(loc), op(op) {}
 
-UnaryExpr::UnaryExpr(std::string op, SourceLocation loc)
-    : NodeWithKind<UnaryExpr, ASTNode::Kind::UnaryExpr, Expression>(loc), op(std::move(op)) {}
+UnaryExpr::UnaryExpr(UnaryOp op, SourceLocation loc)
+    : NodeWithKind<UnaryExpr, ASTNode::Kind::UnaryExpr, Expression>(loc), op(op) {}
 
 LiteralExpr::LiteralExpr(std::string literal, SourceLocation loc)
     : NodeWithKind<LiteralExpr, ASTNode::Kind::LiteralExpr, Expression>(loc),
@@ -477,6 +539,9 @@ IdentifierExpr::IdentifierExpr(std::string identifier, SourceLocation loc)
 FieldAccessExpr::FieldAccessExpr(std::string field, SourceLocation loc)
     : NodeWithKind<FieldAccessExpr, ASTNode::Kind::FieldAccessExpr, Expression>(loc),
       field(std::move(field)) {}
+
+IndexExpr::IndexExpr(SourceLocation loc)
+    : NodeWithKind<IndexExpr, ASTNode::Kind::IndexExpr, Expression>(loc) {}
 
 CallExpr::CallExpr(std::string callee, SourceLocation loc)
     : NodeWithKind<CallExpr, ASTNode::Kind::CallExpr, Expression>(loc), callee(std::move(callee)) {}
@@ -491,5 +556,9 @@ StructFieldInit::StructFieldInit(std::string name, SourceLocation loc)
 StructLiteralExpr::StructLiteralExpr(std::string typeName, SourceLocation loc)
     : NodeWithKind<StructLiteralExpr, ASTNode::Kind::StructLiteralExpr, Expression>(loc),
       typeName(std::move(typeName)) {}
+
+const char* binaryOpName(BinaryOp op) { return binaryOpDisplayName(op); }
+
+const char* unaryOpName(UnaryOp op) { return unaryOpDisplayName(op); }
 
 } // namespace dhad::ast

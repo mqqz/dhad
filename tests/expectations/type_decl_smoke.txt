@@ -1,0 +1,69 @@
+Parse succeeded: tests/sources/type_decl_smoke.dh
+Program
+  StructDecl نقطة
+  Fields:
+    StructField س
+    Type:
+      TypePrimitive int
+    StructField ص
+    Type:
+      TypePrimitive int
+  EnumDecl نتيجة
+  Variants:
+    EnumVariant نجاح
+    EnumVariant فشل
+    Payload:
+      TypePrimitive string
+    EnumVariant ربما
+    Payload:
+      TypeProduct
+      Members:
+        TypePrimitive int
+        TypePrimitive string
+  FunctionDecl بداية
+  ReturnType:
+    TypePrimitive int
+  Body:
+    BlockStmt
+      VarDecl أ
+      Type:
+        TypeName نقطة
+      Initializer:
+        StructLiteral نقطة
+        Fields:
+          StructFieldInit س
+          Value:
+            Literal "1"
+          StructFieldInit ص
+          Value:
+            Literal "2"
+      VarDecl ب
+      Type:
+        TypeName نتيجة
+      Initializer:
+        Literal "null"
+      IfStmt
+      Condition:
+        BinaryExpr op="=="
+        LHS:
+          BinaryExpr op="+"
+          LHS:
+            FieldAccess س
+            Base:
+              Identifier أ
+          RHS:
+            FieldAccess ص
+            Base:
+              Identifier أ
+        RHS:
+          Literal "3"
+      Then:
+        BlockStmt
+          ExpressionStmt
+          Value:
+            CallExpr callee=اطبع
+            Args:
+              Literal ""ok""
+      ReturnStmt
+      Value:
+        Literal "0"

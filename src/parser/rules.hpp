@@ -63,6 +63,7 @@ namespace dhad::parser {
   F(TypeAnnotationSome)                                                                            \
   F(TypeAnnotationNone)                                                                            \
   F(AssignmentStmt)                                                                                \
+  F(AssignmentIndexStmt)                                                                           \
   F(IfMatchedFull)                                                                                 \
   F(IfUnmatchedNoElse)                                                                             \
   F(IfUnmatchedWithElse)                                                                           \
@@ -81,6 +82,7 @@ namespace dhad::parser {
   F(ArgumentTailEmpty)                                                                             \
   F(ExpressionPass)                                                                                \
   F(FieldAccess)                                                                                   \
+  F(IndexAccess)                                                                                   \
   F(BinaryExpr)                                                                                    \
   F(UnaryPrefix)                                                                                   \
   F(PrimaryLiteral)                                                                                \
