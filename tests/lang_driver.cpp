@@ -9,8 +9,6 @@
 #include "../src/lexer/tokens.hpp"
 #include "../src/parser/parser.hpp"
 
-#include <llvm/Support/raw_ostream.h>
-
 namespace {
 
 enum class Mode { Lexer, Parser };
@@ -66,8 +64,8 @@ int runParser(const std::string& inputPath) {
     std::cerr << "Failed to parse " << inputPath << "\n";
     return 1;
   }
-  llvm::outs() << "Parse succeeded: " << inputPath << "\n";
-  result.root->dump(llvm::outs());
+  std::cout << "Parse succeeded: " << inputPath << "\n";
+  result.root->dump(std::cout);
   return 0;
 }
 

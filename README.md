@@ -74,4 +74,32 @@ opts.moduleResolver = [&modules](std::string_view module, std::string_view) {
 auto result = dhad::pipeline::runString(u8R"(استورد util؛ دالة بداية(): عدد { اطبع(حي())؛ أعد 0؛ })", opts);
 ```
 
+## Browser MVP
+
+1. Build the wasm web API with Emscripten:
+   ```bash
+   emcmake cmake -S . -B build/wasm -DDHAD_BUILD_WASM=ON
+   EM_CACHE=/tmp/emscripten-cache cmake --build build/wasm -j
+   ```
+   This writes `dhad_web.js` and `dhad_web.wasm` into `build/`.
+2. Serve this repository root over HTTP (worker + wasm require it):
+   ```bash
+   python3 -m http.server 8080
+   ```
+3. Open `http://localhost:8080/web/`.
+4. Keep `WASM JS path` as `../build/dhad_web.js` (auto-default when served from `/web/`).
+5. Click `Run` or `Parse AST`; the worker initializes automatically on first use.
+
+### GitHub Pages deployment
+
+This repository includes `.github/workflows/pages.yml` that:
+
+1. Builds wasm artifacts with Emscripten.
+2. Assembles a static `site/` folder from `web/*` plus:
+   - `build/dhad_web.js` -> `site/build/dhad_web.js`
+   - `build/dhad_web.wasm` -> `site/build/dhad_web.wasm`
+3. Deploys to GitHub Pages via `actions/deploy-pages`.
+
+For Pages-hosted site root, the playground auto-defaults `WASM JS path` to `./build/dhad_web.js`.
+
 Contributions are welcome, just be aware that the design is changing quickly and I am still figuring out the fundamentals. Tune in via issues/PRs if you want to help shape the language.

@@ -2,16 +2,51 @@
 
 #include "../lexer/tokens.hpp"
 #include "../typing/types.hpp"
+#include <cassert>
+#include <iostream>
 #include <memory>
 #include <optional>
 #include <string>
+#include <type_traits>
 #include <vector>
 
+#if DHAD_ENABLE_CODEGEN
 #include <llvm/Support/Casting.h>
-
+#else
 namespace llvm {
-class raw_ostream;
+
+template <typename To, typename From> inline bool isa(const From* value) {
+  return dynamic_cast<const To*>(value) != nullptr;
+}
+
+template <typename To, typename From,
+          typename = std::enable_if_t<!std::is_pointer_v<std::decay_t<From>>>>
+inline bool isa(const From& value) {
+  return dynamic_cast<const To*>(&value) != nullptr;
+}
+
+template <typename To, typename From> inline To* dyn_cast(From* value) {
+  return dynamic_cast<To*>(value);
+}
+
+template <typename To, typename From> inline const To* dyn_cast(const From* value) {
+  return dynamic_cast<const To*>(value);
+}
+
+template <typename To, typename From> inline To& cast(From& value) {
+  auto* converted = dynamic_cast<To*>(&value);
+  assert(converted && "invalid cast");
+  return *converted;
+}
+
+template <typename To, typename From> inline const To& cast(const From& value) {
+  auto* converted = dynamic_cast<const To*>(&value);
+  assert(converted && "invalid cast");
+  return *converted;
+}
+
 } // namespace llvm
+#endif
 
 namespace dhad::ast {
 
@@ -140,7 +175,7 @@ public:
   [[nodiscard]] const SourceLocation& getLocation() const { return location; }
   [[nodiscard]] const char* kindName() const { return kindName(kind); }
   static const char* kindName(Kind kind);
-  void dump(llvm::raw_ostream& os, unsigned indent = 0) const;
+  void dump(std::ostream& os, unsigned indent = 0) const;
   void dump() const;
   virtual void accept(ASTVisitor& visitor) const = 0;
 

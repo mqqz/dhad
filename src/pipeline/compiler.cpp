@@ -1,6 +1,8 @@
 #include "pipeline/compiler.hpp"
 
+#if DHAD_ENABLE_CODEGEN
 #include "../codegen/codegen.hpp"
+#endif
 #include "../interp/interpreter.hpp"
 #include "../parser/parser.hpp"
 #include "../std/identifiers.hpp"
@@ -13,9 +15,6 @@
 #include <unordered_set>
 #include <utility>
 #include <vector>
-
-#include <llvm/Support/Casting.h>
-#include <llvm/Support/raw_ostream.h>
 
 namespace dhad::pipeline {
 
@@ -207,12 +206,13 @@ CompileResult compileString(std::string source, const CompileOptions& options) {
   }
 
   if (options.includeAstDump) {
-    llvm::raw_string_ostream astStream(out.astDump);
+    std::ostringstream astStream;
     prepared.program->dump(astStream);
-    astStream.flush();
+    out.astDump = astStream.str();
   }
 
   if (options.includeIR) {
+#if DHAD_ENABLE_CODEGEN
     codegen::CodeGenModule codegen(options.moduleName);
     if (!codegen.generate(*prepared.program)) {
       appendDiagnostic(out, Diagnostic{DiagnosticStage::CodeGen, "", std::nullopt,
@@ -221,6 +221,12 @@ CompileResult compileString(std::string source, const CompileOptions& options) {
       return out;
     }
     out.ir = codegen.emitIR();
+#else
+    appendDiagnostic(out,
+                     Diagnostic{DiagnosticStage::CodeGen, "", std::nullopt,
+                                "IR code generation is disabled in this build"});
+    return out;
+#endif
   }
 
   out.success = true;

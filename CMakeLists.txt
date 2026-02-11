@@ -23,8 +23,20 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(DHAD_FORCE_PARSER_REBUILD "Force regeneration of parser tables." OFF)
 option(DHAD_BUILD_WASM "Build the Emscripten WASM web API target." OFF)
+option(DHAD_ENABLE_CODEGEN "Enable LLVM-based IR code generation support." ON)
 set(DHAD_PYTHON_VENV_DIR "${CMAKE_CURRENT_SOURCE_DIR}/.venv"
     CACHE PATH "Shared Python virtual environment directory.")
+
+if(DHAD_BUILD_WASM AND CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+  set(BUILD_TESTING OFF CACHE BOOL "Build tests" FORCE)
+  set(DHAD_ENABLE_CODEGEN OFF CACHE BOOL "Enable LLVM-based IR code generation support." FORCE)
+endif()
+
+if(DHAD_ENABLE_CODEGEN)
+  add_compile_definitions(DHAD_ENABLE_CODEGEN=1)
+else()
+  add_compile_definitions(DHAD_ENABLE_CODEGEN=0)
+endif()
 
 include(CTest)
 
@@ -37,33 +49,36 @@ if(Python3_VERSION VERSION_LESS 3.10)
   message(FATAL_ERROR "Python ${Python3_VERSION} is too old; require >= 3.10")
 endif()
 
-if(NOT LLVM_DIR)
-  set(_dhad_llvm_versions 21 20 19 18 17)
-  foreach(ver IN LISTS _dhad_llvm_versions)
-    set(_dhad_candidate "/usr/lib/llvm-${ver}/cmake")
-    if(EXISTS "${_dhad_candidate}/LLVMConfig.cmake")
-      set(LLVM_DIR "${_dhad_candidate}" CACHE PATH "Path to LLVMConfig.cmake" FORCE)
-      break()
-    endif()
-    set(_dhad_candidate "/usr/lib/llvm/${ver}/lib/cmake/llvm")
-    if(EXISTS "${_dhad_candidate}/LLVMConfig.cmake")
-      set(LLVM_DIR "${_dhad_candidate}" CACHE PATH "Path to LLVMConfig.cmake" FORCE)
-      break()
-    endif()
-  endforeach()
-endif()
+if(DHAD_ENABLE_CODEGEN)
+  if(NOT LLVM_DIR)
+    set(_dhad_llvm_versions 21 20 19 18 17)
+    foreach(ver IN LISTS _dhad_llvm_versions)
+      set(_dhad_candidate "/usr/lib/llvm-${ver}/cmake")
+      if(EXISTS "${_dhad_candidate}/LLVMConfig.cmake")
+        set(LLVM_DIR "${_dhad_candidate}" CACHE PATH "Path to LLVMConfig.cmake" FORCE)
+        break()
+      endif()
+      set(_dhad_candidate "/usr/lib/llvm/${ver}/lib/cmake/llvm")
+      if(EXISTS "${_dhad_candidate}/LLVMConfig.cmake")
+        set(LLVM_DIR "${_dhad_candidate}" CACHE PATH "Path to LLVMConfig.cmake" FORCE)
+        break()
+      endif()
+    endforeach()
+  endif()
 
-find_package(LLVM REQUIRED CONFIG)
-if(LLVM_PACKAGE_VERSION VERSION_LESS 17)
-  message(FATAL_ERROR "LLVM ${LLVM_PACKAGE_VERSION} is too old; require >= 17")
-endif()
-message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
-list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")
-include(AddLLVM)
-llvm_map_components_to_libnames(DHAD_LLVM_LIBS support core irreader)
-if(NOT LLVM_TOOLS_BINARY_DIR)
-  set(LLVM_TOOLS_BINARY_DIR "${LLVM_INSTALL_PREFIX}/bin" CACHE PATH
-      "Path to LLVM command-line tools" FORCE)
+  find_package(LLVM REQUIRED CONFIG)
+  if(LLVM_PACKAGE_VERSION VERSION_LESS 17)
+    message(FATAL_ERROR "LLVM ${LLVM_PACKAGE_VERSION} is too old; require >= 17")
+  endif()
+  message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
+  list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")
+  include(AddLLVM)
+  llvm_map_components_to_libnames(DHAD_LLVM_LIBS support core irreader)
+  if(NOT LLVM_TOOLS_BINARY_DIR)
+    set(LLVM_TOOLS_BINARY_DIR "${LLVM_INSTALL_PREFIX}/bin" CACHE PATH
+        "Path to LLVM command-line tools" FORCE)
+  endif()
+  set(DHAD_LLVM_INCLUDE_DIRS ${LLVM_INCLUDE_DIRS})
 endif()
 
 # ------------------------------------------------------------------------------
@@ -145,13 +160,17 @@ add_library(dhad_typing STATIC
   src/std/registry.cpp
   src/std/runtime.cpp)
 target_include_directories(dhad_typing PUBLIC src)
-target_include_directories(dhad_typing SYSTEM PUBLIC ${LLVM_INCLUDE_DIRS})
+if(DHAD_ENABLE_CODEGEN)
+  target_include_directories(dhad_typing SYSTEM PUBLIC ${DHAD_LLVM_INCLUDE_DIRS})
+endif()
 dhad_strict_warnings(dhad_typing)
 
 add_library(dhad_ast STATIC src/ast/ast.cpp src/ast/builders.cpp)
 target_include_directories(dhad_ast PUBLIC src)
-target_include_directories(dhad_ast SYSTEM PUBLIC ${LLVM_INCLUDE_DIRS})
-target_link_libraries(dhad_ast PUBLIC ${DHAD_LLVM_LIBS})
+if(DHAD_ENABLE_CODEGEN)
+  target_include_directories(dhad_ast SYSTEM PUBLIC ${DHAD_LLVM_INCLUDE_DIRS})
+  target_link_libraries(dhad_ast PUBLIC ${DHAD_LLVM_LIBS})
+endif()
 dhad_strict_warnings(dhad_ast)
 
 add_library(dhad_lexer STATIC src/lexer/lexer.cpp)
@@ -169,11 +188,13 @@ target_include_directories(dhad_parser
 add_dependencies(dhad_parser parser_tables_gen)
 dhad_strict_warnings(dhad_parser)
 
-add_library(dhad_codegen STATIC src/codegen/codegen.cpp)
-target_link_libraries(dhad_codegen PUBLIC dhad_ast ${DHAD_LLVM_LIBS})
-target_include_directories(dhad_codegen PUBLIC src)
-target_include_directories(dhad_codegen SYSTEM PUBLIC ${LLVM_INCLUDE_DIRS})
-dhad_strict_warnings(dhad_codegen)
+if(DHAD_ENABLE_CODEGEN)
+  add_library(dhad_codegen STATIC src/codegen/codegen.cpp)
+  target_link_libraries(dhad_codegen PUBLIC dhad_ast ${DHAD_LLVM_LIBS})
+  target_include_directories(dhad_codegen PUBLIC src)
+  target_include_directories(dhad_codegen SYSTEM PUBLIC ${LLVM_INCLUDE_DIRS})
+  dhad_strict_warnings(dhad_codegen)
+endif()
 
 add_library(dhad_interp STATIC src/interp/interpreter.cpp)
 target_link_libraries(dhad_interp PUBLIC dhad_ast)
@@ -181,9 +202,12 @@ target_include_directories(dhad_interp PUBLIC src)
 dhad_strict_warnings(dhad_interp)
 
 add_library(dhad_pipeline STATIC src/pipeline/compiler.cpp)
-target_link_libraries(dhad_pipeline PUBLIC dhad_parser dhad_codegen dhad_typing dhad_interp)
+target_link_libraries(dhad_pipeline PUBLIC dhad_parser dhad_typing dhad_interp)
+if(DHAD_ENABLE_CODEGEN)
+  target_link_libraries(dhad_pipeline PUBLIC dhad_codegen)
+  target_include_directories(dhad_pipeline SYSTEM PUBLIC ${DHAD_LLVM_INCLUDE_DIRS})
+endif()
 target_include_directories(dhad_pipeline PUBLIC src)
-target_include_directories(dhad_pipeline SYSTEM PUBLIC ${LLVM_INCLUDE_DIRS})
 add_dependencies(dhad_pipeline parser_tables_gen)
 dhad_strict_warnings(dhad_pipeline)
 
@@ -191,38 +215,46 @@ dhad_strict_warnings(dhad_pipeline)
 # Executables
 # ------------------------------------------------------------------------------
 
-add_executable(lang_driver tests/lang_driver.cpp)
-target_link_libraries(lang_driver PRIVATE dhad_lexer dhad_parser)
-target_include_directories(lang_driver PRIVATE src
-                                             src/lexer
-                                             src/parser
-                                             "${CMAKE_CURRENT_BINARY_DIR}/generated")
-add_dependencies(lang_driver parser_tables_gen)
-dhad_strict_warnings(lang_driver)
+if(NOT DHAD_BUILD_WASM)
+  add_executable(lang_driver tests/lang_driver.cpp)
+  target_link_libraries(lang_driver PRIVATE dhad_lexer dhad_parser)
+  target_include_directories(lang_driver PRIVATE src
+                                               src/lexer
+                                               src/parser
+                                               "${CMAKE_CURRENT_BINARY_DIR}/generated")
+  add_dependencies(lang_driver parser_tables_gen)
+  dhad_strict_warnings(lang_driver)
+endif()
 
-add_executable(codegen_ex1 EXCLUDE_FROM_ALL tests/codegen_ex1.cpp)
-target_link_libraries(codegen_ex1 PRIVATE dhad_parser dhad_codegen dhad_typing)
-add_dependencies(codegen_ex1 parser_tables_gen)
-dhad_strict_warnings(codegen_ex1)
+if(DHAD_ENABLE_CODEGEN)
+  add_executable(codegen_ex1 EXCLUDE_FROM_ALL tests/codegen_ex1.cpp)
+  target_link_libraries(codegen_ex1 PRIVATE dhad_parser dhad_codegen dhad_typing)
+  add_dependencies(codegen_ex1 parser_tables_gen)
+  dhad_strict_warnings(codegen_ex1)
+endif()
 
-add_executable(interp_smoke tests/interp_smoke.cpp)
-target_link_libraries(interp_smoke PRIVATE dhad_pipeline)
-target_include_directories(interp_smoke PRIVATE src "${CMAKE_CURRENT_BINARY_DIR}/generated")
-add_dependencies(interp_smoke parser_tables_gen)
-dhad_strict_warnings(interp_smoke)
+if(NOT DHAD_BUILD_WASM)
+  add_executable(interp_smoke tests/interp_smoke.cpp)
+  target_link_libraries(interp_smoke PRIVATE dhad_pipeline)
+  target_include_directories(interp_smoke PRIVATE src "${CMAKE_CURRENT_BINARY_DIR}/generated")
+  add_dependencies(interp_smoke parser_tables_gen)
+  dhad_strict_warnings(interp_smoke)
 
-add_executable(interp_resolver_smoke tests/interp_resolver_smoke.cpp)
-target_link_libraries(interp_resolver_smoke PRIVATE dhad_pipeline)
-target_include_directories(interp_resolver_smoke PRIVATE src "${CMAKE_CURRENT_BINARY_DIR}/generated")
-add_dependencies(interp_resolver_smoke parser_tables_gen)
-dhad_strict_warnings(interp_resolver_smoke)
+  add_executable(interp_resolver_smoke tests/interp_resolver_smoke.cpp)
+  target_link_libraries(interp_resolver_smoke PRIVATE dhad_pipeline)
+  target_include_directories(interp_resolver_smoke PRIVATE src "${CMAKE_CURRENT_BINARY_DIR}/generated")
+  add_dependencies(interp_resolver_smoke parser_tables_gen)
+  dhad_strict_warnings(interp_resolver_smoke)
+endif()
 
-add_executable(dhad src/main.cpp)
-target_link_libraries(dhad PRIVATE dhad_pipeline)
-target_include_directories(dhad PRIVATE src "${CMAKE_CURRENT_BINARY_DIR}/generated")
-add_dependencies(dhad parser_tables_gen)
-target_compile_definitions(dhad PRIVATE DHAD_DEFAULT_CLANG="${CMAKE_C_COMPILER}")
-dhad_strict_warnings(dhad)
+if(DHAD_ENABLE_CODEGEN)
+  add_executable(dhad src/main.cpp)
+  target_link_libraries(dhad PRIVATE dhad_pipeline)
+  target_include_directories(dhad PRIVATE src "${CMAKE_CURRENT_BINARY_DIR}/generated")
+  add_dependencies(dhad parser_tables_gen)
+  target_compile_definitions(dhad PRIVATE DHAD_DEFAULT_CLANG="${CMAKE_C_COMPILER}")
+  dhad_strict_warnings(dhad)
+endif()
 
 if(DHAD_BUILD_WASM)
   if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
@@ -233,6 +265,9 @@ if(DHAD_BUILD_WASM)
   target_link_libraries(dhad_web PRIVATE dhad_pipeline)
   target_include_directories(dhad_web PRIVATE src "${CMAKE_CURRENT_BINARY_DIR}/generated")
   add_dependencies(dhad_web parser_tables_gen)
+  set_target_properties(dhad_web PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/build"
+    OUTPUT_NAME "dhad_web")
   dhad_strict_warnings(dhad_web)
   target_link_options(
     dhad_web
@@ -242,7 +277,7 @@ if(DHAD_BUILD_WASM)
       "SHELL:-s MODULARIZE=1"
       "SHELL:-s ENVIRONMENT=web,worker"
       "SHELL:-s EXPORTED_FUNCTIONS=['_dhad_parse_ast','_dhad_run','_dhad_free']"
-      "SHELL:-s EXPORTED_RUNTIME_METHODS=['ccall','cwrap']"
+      "SHELL:-s EXPORTED_RUNTIME_METHODS=['ccall','cwrap','UTF8ToString','allocateUTF8']"
       "SHELL:-s ALLOW_MEMORY_GROWTH=1")
 endif()
 
@@ -287,175 +322,177 @@ if(BUILD_TESTING)
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/type_decl_smoke.dh"
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/type_decl_smoke.txt")
 
-  add_test(
-    NAME codegen_example
-    COMMAND "${DHAD_TEST_PYTHON}"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_codegen_tests.py"
-            --codegen "$<TARGET_FILE:codegen_ex1>"
-            --example "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/ex1.dh"
-            --opt "${LLVM_TOOLS_BINARY_DIR}/opt"
-            --lli "${LLVM_TOOLS_BINARY_DIR}/lli")
+  if(DHAD_ENABLE_CODEGEN)
+    add_test(
+      NAME codegen_example
+      COMMAND "${DHAD_TEST_PYTHON}"
+              "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_codegen_tests.py"
+              --codegen "$<TARGET_FILE:codegen_ex1>"
+              --example "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/ex1.dh"
+              --opt "${LLVM_TOOLS_BINARY_DIR}/opt"
+              --lli "${LLVM_TOOLS_BINARY_DIR}/lli")
 
-  add_test(
-    NAME float_runtime
-    COMMAND "${DHAD_TEST_PYTHON}"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_codegen_tests.py"
-            --codegen "$<TARGET_FILE:codegen_ex1>"
-            --example "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/float_runtime.dh"
-            --opt "${LLVM_TOOLS_BINARY_DIR}/opt"
-            --lli "${LLVM_TOOLS_BINARY_DIR}/lli"
-            --expected "ok\n")
+    add_test(
+      NAME float_runtime
+      COMMAND "${DHAD_TEST_PYTHON}"
+              "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_codegen_tests.py"
+              --codegen "$<TARGET_FILE:codegen_ex1>"
+              --example "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/float_runtime.dh"
+              --opt "${LLVM_TOOLS_BINARY_DIR}/opt"
+              --lli "${LLVM_TOOLS_BINARY_DIR}/lli"
+              --expected "ok\n")
 
-  add_test(
-    NAME struct_runtime
-    COMMAND "${DHAD_TEST_PYTHON}"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_codegen_tests.py"
-            --codegen "$<TARGET_FILE:codegen_ex1>"
-            --example "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/struct_runtime.dh"
-            --opt "${LLVM_TOOLS_BINARY_DIR}/opt"
-            --lli "${LLVM_TOOLS_BINARY_DIR}/lli"
-            --expected "ok\n")
+    add_test(
+      NAME struct_runtime
+      COMMAND "${DHAD_TEST_PYTHON}"
+              "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_codegen_tests.py"
+              --codegen "$<TARGET_FILE:codegen_ex1>"
+              --example "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/struct_runtime.dh"
+              --opt "${LLVM_TOOLS_BINARY_DIR}/opt"
+              --lli "${LLVM_TOOLS_BINARY_DIR}/lli"
+              --expected "ok\n")
 
-  add_test(
-    NAME break_continue_outside_loop
-    COMMAND
-      "${DHAD_TEST_PYTHON}"
-      "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_dhad_tests.py"
-      --driver
-      "$<TARGET_FILE:dhad>"
-      --case
-      "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/break_outside_loop.dh"
-      "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/break_outside_loop.txt"
-      --case
-      "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/continue_outside_loop.dh"
-      "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/continue_outside_loop.txt")
+    add_test(
+      NAME break_continue_outside_loop
+      COMMAND
+        "${DHAD_TEST_PYTHON}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_dhad_tests.py"
+        --driver
+        "$<TARGET_FILE:dhad>"
+        --case
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/break_outside_loop.dh"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/break_outside_loop.txt"
+        --case
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/continue_outside_loop.dh"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/continue_outside_loop.txt")
 
-  add_test(
-    NAME missing_return
-    COMMAND
-      "${DHAD_TEST_PYTHON}"
-      "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_dhad_tests.py"
-      --driver
-      "$<TARGET_FILE:dhad>"
-      --case
-      "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/missing_return.dh"
-      "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/missing_return.txt")
+    add_test(
+      NAME missing_return
+      COMMAND
+        "${DHAD_TEST_PYTHON}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_dhad_tests.py"
+        --driver
+        "$<TARGET_FILE:dhad>"
+        --case
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/missing_return.dh"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/missing_return.txt")
 
-  add_test(
-    NAME import_from_file
-    COMMAND
-      "${DHAD_TEST_PYTHON}"
-      "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_dhad_ir_tests.py"
-      --driver
-      "$<TARGET_FILE:dhad>"
-      --case
-      "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/import_main.dh"
-      "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/import_ir_contains.txt")
+    add_test(
+      NAME import_from_file
+      COMMAND
+        "${DHAD_TEST_PYTHON}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_dhad_ir_tests.py"
+        --driver
+        "$<TARGET_FILE:dhad>"
+        --case
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/import_main.dh"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/import_ir_contains.txt")
 
-  add_test(
-    NAME import_missing
-    COMMAND
-      "${DHAD_TEST_PYTHON}"
-      "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_dhad_tests.py"
-      --driver
-      "$<TARGET_FILE:dhad>"
-      --case
-      "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/import_missing.dh"
-      "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/import_missing.txt")
+    add_test(
+      NAME import_missing
+      COMMAND
+        "${DHAD_TEST_PYTHON}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_dhad_tests.py"
+        --driver
+        "$<TARGET_FILE:dhad>"
+        --case
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/import_missing.dh"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/import_missing.txt")
 
-  add_test(
-    NAME float_ops_codegen
-    COMMAND
-      "${DHAD_TEST_PYTHON}"
-      "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_dhad_ir_tests.py"
-      --driver
-      "$<TARGET_FILE:dhad>"
-      --case
-      "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/float_ops.dh"
-      "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/float_ir_contains.txt")
+    add_test(
+      NAME float_ops_codegen
+      COMMAND
+        "${DHAD_TEST_PYTHON}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_dhad_ir_tests.py"
+        --driver
+        "$<TARGET_FILE:dhad>"
+        --case
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/float_ops.dh"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/float_ir_contains.txt")
 
-  add_test(
-    NAME composite_type_mismatch
-    COMMAND
-      "${DHAD_TEST_PYTHON}"
-      "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_dhad_tests.py"
-      --driver
-      "$<TARGET_FILE:dhad>"
-      --case
-      "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/type_mismatch_sum.dh"
-      "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/type_mismatch_sum.txt"
-      --case
-      "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/type_mismatch_product.dh"
-      "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/type_mismatch_product.txt"
-      --case
-      "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/type_mismatch_array.dh"
-      "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/type_mismatch_array.txt")
+    add_test(
+      NAME composite_type_mismatch
+      COMMAND
+        "${DHAD_TEST_PYTHON}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_dhad_tests.py"
+        --driver
+        "$<TARGET_FILE:dhad>"
+        --case
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/type_mismatch_sum.dh"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/type_mismatch_sum.txt"
+        --case
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/type_mismatch_product.dh"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/type_mismatch_product.txt"
+        --case
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/type_mismatch_array.dh"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/type_mismatch_array.txt")
 
-  add_test(
-    NAME unknown_type
-    COMMAND
-      "${DHAD_TEST_PYTHON}"
-      "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_dhad_tests.py"
-      --driver
-      "$<TARGET_FILE:dhad>"
-      --case
-      "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/unknown_type.dh"
-      "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/unknown_type.txt")
+    add_test(
+      NAME unknown_type
+      COMMAND
+        "${DHAD_TEST_PYTHON}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_dhad_tests.py"
+        --driver
+        "$<TARGET_FILE:dhad>"
+        --case
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/unknown_type.dh"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/unknown_type.txt")
 
-  add_test(
-    NAME composite_codegen
-    COMMAND
-      "${DHAD_TEST_PYTHON}"
-      "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_dhad_ir_tests.py"
-      --driver
-      "$<TARGET_FILE:dhad>"
-      --case
-      "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/composite_codegen.dh"
-      "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/composite_ir_contains.txt")
+    add_test(
+      NAME composite_codegen
+      COMMAND
+        "${DHAD_TEST_PYTHON}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_dhad_ir_tests.py"
+        --driver
+        "$<TARGET_FILE:dhad>"
+        --case
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/composite_codegen.dh"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/composite_ir_contains.txt")
 
-  add_test(
-    NAME array_literal_codegen
-    COMMAND
-      "${DHAD_TEST_PYTHON}"
-      "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_dhad_ir_tests.py"
-      --driver
-      "$<TARGET_FILE:dhad>"
-      --case
-      "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/array_literal_codegen.dh"
-      "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/array_literal_ir_contains.txt")
+    add_test(
+      NAME array_literal_codegen
+      COMMAND
+        "${DHAD_TEST_PYTHON}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_dhad_ir_tests.py"
+        --driver
+        "$<TARGET_FILE:dhad>"
+        --case
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/array_literal_codegen.dh"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/array_literal_ir_contains.txt")
 
-  add_test(
-    NAME arabic_digits_codegen
-    COMMAND
-      "${DHAD_TEST_PYTHON}"
-      "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_dhad_ir_tests.py"
-      --driver
-      "$<TARGET_FILE:dhad>"
-      --case
-      "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/arabic_digits_codegen.dh"
-      "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/arabic_digits_ir_contains.txt")
+    add_test(
+      NAME arabic_digits_codegen
+      COMMAND
+        "${DHAD_TEST_PYTHON}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_dhad_ir_tests.py"
+        --driver
+        "$<TARGET_FILE:dhad>"
+        --case
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/arabic_digits_codegen.dh"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/arabic_digits_ir_contains.txt")
 
-  add_test(
-    NAME array_index_runtime_codegen
-    COMMAND
-      "${DHAD_TEST_PYTHON}"
-      "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_dhad_ir_tests.py"
-      --driver
-      "$<TARGET_FILE:dhad>"
-      --case
-      "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/array_index_runtime.dh"
-      "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/array_index_ir_contains.txt")
+    add_test(
+      NAME array_index_runtime_codegen
+      COMMAND
+        "${DHAD_TEST_PYTHON}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_dhad_ir_tests.py"
+        --driver
+        "$<TARGET_FILE:dhad>"
+        --case
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/array_index_runtime.dh"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/array_index_ir_contains.txt")
 
-  add_test(
-    NAME array_index_write_codegen
-    COMMAND
-      "${DHAD_TEST_PYTHON}"
-      "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_dhad_ir_tests.py"
-      --driver
-      "$<TARGET_FILE:dhad>"
-      --case
-      "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/array_index_write_runtime.dh"
-      "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/array_index_write_ir_contains.txt")
+    add_test(
+      NAME array_index_write_codegen
+      COMMAND
+        "${DHAD_TEST_PYTHON}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_dhad_ir_tests.py"
+        --driver
+        "$<TARGET_FILE:dhad>"
+        --case
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/array_index_write_runtime.dh"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/array_index_write_ir_contains.txt")
+  endif()
 
   add_test(
     NAME interp_smoke

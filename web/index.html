@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>dhad Playground</title>
+  <link rel="stylesheet" href="./playground.css">
+</head>
+<body>
+  <main class="layout">
+    <header class="header">
+      <h1>dhad Playground</h1>
+      <p>Client-side parse and run with WebAssembly</p>
+    </header>
+
+    <section class="toolbar">
+      <label>
+        WASM JS path
+        <input id="wasmPath" type="text" value="">
+      </label>
+      <label>
+        Example
+        <select id="exampleSelect"></select>
+      </label>
+      <button id="parseBtn" type="button">Parse AST</button>
+      <button id="runBtn" type="button">Run</button>
+    </section>
+
+    <section class="editor">
+      <textarea id="source" spellcheck="false"></textarea>
+    </section>
+
+    <section class="panels">
+      <article>
+        <h2>Output</h2>
+        <pre id="output"></pre>
+      </article>
+      <article>
+        <h2>Diagnostics</h2>
+        <pre id="diagnostics"></pre>
+      </article>
+      <article>
+        <h2>AST</h2>
+        <pre id="ast"></pre>
+      </article>
+    </section>
+  </main>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 #include "ast.hpp"
 
-#include <llvm/Support/raw_ostream.h>
+#include <iostream>
 
 namespace dhad::ast {
 
@@ -74,7 +74,7 @@ const char* unaryOpDisplayName(UnaryOp op) {
 
 class DumpVisitor : public ASTVisitor {
 public:
-  DumpVisitor(llvm::raw_ostream& os, unsigned indent) : os(os), currentIndent(indent) {}
+  DumpVisitor(std::ostream& os, unsigned indent) : os(os), currentIndent(indent) {}
 
   void visit(const Program& node) override {
     indent();
@@ -312,10 +312,10 @@ public:
   }
 
 private:
-  llvm::raw_ostream& os;
+  std::ostream& os;
   unsigned currentIndent;
 
-  void indent() { os.indent(currentIndent); }
+  void indent() { os << std::string(currentIndent, ' '); }
 
   struct IndentGuard {
     DumpVisitor& visitor;
@@ -434,13 +434,13 @@ const char* ASTNode::kindName(Kind kind) {
   return "Unknown";
 }
 
-void ASTNode::dump(llvm::raw_ostream& os, unsigned indent) const {
+void ASTNode::dump(std::ostream& os, unsigned indent) const {
   DumpVisitor visitor(os, indent);
   accept(visitor);
 }
 
 void ASTNode::dump() const {
-  DumpVisitor visitor(llvm::errs(), 0);
+  DumpVisitor visitor(std::cerr, 0);
   accept(visitor);
 }
 

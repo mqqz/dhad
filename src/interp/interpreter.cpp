@@ -10,8 +10,6 @@
 #include <string_view>
 #include <utility>
 
-#include <llvm/Support/Casting.h>
-
 namespace dhad::interp {
 
 namespace {
