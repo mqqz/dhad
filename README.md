@@ -22,7 +22,7 @@ This is probabily the most straightforward way to get things going
    - `dhad-linux-x86_64.tar.gz`
    - `dhad-macos-x86_64.tar.gz`
    - `dhad-macos-arm64.tar.gz`
-   - `dhad-windows-x86_64.zip`
+   - `dhad-windows-x86_64.zip` (On Windows, the AST interpreter is shipped, not the compiler)
 
 3. **Extract the archive**
    
@@ -96,7 +96,7 @@ Alternatively, if you'd rather build from source:
 - `make format` runs `clang-format` over `src/` and `tests/`.
 - `requirements.txt` has the requirements for the python scripts.
 - Checkout `examples/` for a basic feel on how things work.
-- `--emit-ir` flag can be used to output LLVM IR only.
+- `--emit-ir` flag can be used to output LLVM IR only (only Linux/MacOS).
 
 
 *Contributions are welcome, just be aware that the design is changing quickly and I am still figuring out the fundamentals. 

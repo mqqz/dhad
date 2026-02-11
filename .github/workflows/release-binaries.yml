@@ -21,18 +21,22 @@ jobs:
             target: linux-x86_64
             archive: tar.gz
             generator: Unix Makefiles
+            codegen: ON
           - os: macos-14
             target: macos-x86_64
             archive: tar.gz
             generator: Unix Makefiles
+            codegen: ON
           - os: macos-14
             target: macos-arm64
             archive: tar.gz
             generator: Unix Makefiles
+            codegen: ON
           - os: windows-latest
             target: windows-x86_64
             archive: zip
             generator: NMake Makefiles
+            codegen: OFF
 
     steps:
       - name: Checkout
@@ -59,44 +63,46 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          choco install llvm --no-progress -y
-          $resolvedLLVMDir = $null
-          $candidateBins = @(
-            "C:\Program Files\LLVM\bin",
-            "C:\ProgramData\chocolatey\lib\llvm\tools\llvm\bin"
-          )
-          foreach ($binPath in $candidateBins) {
-            if (Test-Path $binPath) {
-              $binPath | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          if ("${{ matrix.codegen }}" -eq "ON") {
+            choco install llvm --no-progress -y
+            $resolvedLLVMDir = $null
+            $candidateBins = @(
+              "C:\Program Files\LLVM\bin",
+              "C:\ProgramData\chocolatey\lib\llvm\tools\llvm\bin"
+            )
+            foreach ($binPath in $candidateBins) {
+              if (Test-Path $binPath) {
+                $binPath | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+              }
             }
-          }
 
-          $llvmConfigCmd = Get-Command llvm-config.exe -ErrorAction SilentlyContinue | Select-Object -First 1
-          if ($llvmConfigCmd) {
-            $llvmCmakeDir = & $llvmConfigCmd.Source --cmakedir
-            if ($LASTEXITCODE -eq 0 -and $llvmCmakeDir -and (Test-Path $llvmCmakeDir)) {
-              $resolvedLLVMDir = $llvmCmakeDir
+            $llvmConfigCmd = Get-Command llvm-config.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($llvmConfigCmd) {
+              $llvmCmakeDir = & $llvmConfigCmd.Source --cmakedir
+              if ($LASTEXITCODE -eq 0 -and $llvmCmakeDir -and (Test-Path $llvmCmakeDir)) {
+                $resolvedLLVMDir = $llvmCmakeDir
+              }
             }
-          }
 
-          if (-not $resolvedLLVMDir) {
-            $candidateRoots = @(
-              "C:\Program Files\LLVM",
-              "C:\ProgramData\chocolatey\lib\llvm",
-              "$env:ChocolateyInstall\lib\llvm"
-            ) | Where-Object { $_ -and (Test-Path $_) }
+            if (-not $resolvedLLVMDir) {
+              $candidateRoots = @(
+                "C:\Program Files\LLVM",
+                "C:\ProgramData\chocolatey\lib\llvm",
+                "$env:ChocolateyInstall\lib\llvm"
+              ) | Where-Object { $_ -and (Test-Path $_) }
 
-            $llvmConfig = $null
-            foreach ($root in $candidateRoots) {
-              $llvmConfig = Get-ChildItem -Path $root -Filter LLVMConfig.cmake -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-              if ($llvmConfig) { break }
+              $llvmConfig = $null
+              foreach ($root in $candidateRoots) {
+                $llvmConfig = Get-ChildItem -Path $root -Filter LLVMConfig.cmake -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+                if ($llvmConfig) { break }
+              }
+              if (-not $llvmConfig) {
+                throw "LLVMConfig.cmake not found. Checked: $($candidateRoots -join ', ')"
+              }
+              $resolvedLLVMDir = $llvmConfig.Directory.FullName
             }
-            if (-not $llvmConfig) {
-              throw "LLVMConfig.cmake not found. Checked: $($candidateRoots -join ', ')"
-            }
-            $resolvedLLVMDir = $llvmConfig.Directory.FullName
+            "LLVM_DIR=$resolvedLLVMDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           }
-          "LLVM_DIR=$resolvedLLVMDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Setup MSVC environment
         if: runner.os == 'Windows'
@@ -109,7 +115,7 @@ jobs:
           echo "LLVM_DIR: ${LLVM_DIR:-<unset>}"
 
       - name: Configure
-        run: cmake -S . -B build -G "${{ matrix.generator }}" -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF
+        run: cmake -S . -B build -G "${{ matrix.generator }}" -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DDHAD_ENABLE_CODEGEN=${{ matrix.codegen }}
 
       - name: Build dhad
         run: cmake --build build --target dhad --parallel

@@ -1,9 +1,11 @@
 #include "pipeline/compiler.hpp"
 
+#if DHAD_ENABLE_CODEGEN
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/FileSystem.h>
 #include <llvm/Support/Program.h>
 #include <llvm/Support/raw_ostream.h>
+#endif
 
 #include <cstdlib>
 #include <iostream>
@@ -21,7 +23,11 @@ struct Options {
 };
 
 void printUsage(const char* progName) {
+#if DHAD_ENABLE_CODEGEN
   std::cerr << "Usage: " << progName << " <input.dh> [-o <output>] [--emit-ir]\n";
+#else
+  std::cerr << "Usage: " << progName << " <input.dh>\n";
+#endif
 }
 
 std::optional<Options> parseArgs(int argc, char** argv) {
@@ -42,8 +48,13 @@ std::optional<Options> parseArgs(int argc, char** argv) {
       continue;
     }
     if (arg == "--emit-ir") {
+#if DHAD_ENABLE_CODEGEN
       opts.emitIROnly = true;
       continue;
+#else
+      std::cerr << "error: --emit-ir is unavailable in this build\n";
+      return std::nullopt;
+#endif
     }
     if (!arg.empty() && arg[0] == '-') {
       std::cerr << "error: unknown option '" << arg << "'\n";
@@ -64,6 +75,7 @@ std::optional<Options> parseArgs(int argc, char** argv) {
   return opts;
 }
 
+#if DHAD_ENABLE_CODEGEN
 bool writeIRToTemp(const std::string& ir, std::string& outPath) {
   llvm::SmallString<128> tempPath;
   int fd = -1;
@@ -117,6 +129,7 @@ bool invokeClang(const std::string& inputIR, const std::string& outputPath) {
   }
   return true;
 }
+#endif
 
 } // namespace
 
@@ -132,6 +145,7 @@ int main(int argc, char** argv) {
   }
   const auto& opts = *optsOr;
 
+#if DHAD_ENABLE_CODEGEN
   dhad::pipeline::CompileOptions compileOptions;
   compileOptions.sourceName = opts.inputPath;
   compileOptions.moduleName = opts.outputPath;
@@ -163,4 +177,20 @@ int main(int argc, char** argv) {
 
   std::cout << "Wrote executable to " << opts.outputPath << "\n";
   return 0;
+#else
+  dhad::pipeline::RunOptions runOptions;
+  runOptions.sourceName = opts.inputPath;
+
+  const auto runResult = dhad::pipeline::runFile(opts.inputPath, runOptions);
+  if (!runResult.stderrBuffer.empty()) {
+    std::cerr << runResult.stderrBuffer;
+  }
+  if (!runResult.stdoutBuffer.empty()) {
+    std::cout << runResult.stdoutBuffer;
+  }
+  if (!runResult.success) {
+    return 1;
+  }
+  return runResult.exitCode;
+#endif
 }
