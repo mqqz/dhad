@@ -160,6 +160,7 @@ struct CodeGenModule::Impl {
   llvm::Module& getModule() { return *module; }
   llvm::LLVMContext& getContext() { return context; }
   std::string emitIR() const;
+  std::string lastError() const { return lastErrorMessage; }
 
 private:
   llvm::Type* getTypeByExpr(const ast::TypeExpr* type);
@@ -235,9 +236,11 @@ private:
   llvm::StructType* arrayRuntimeType{nullptr};
   bool stdRuntimeInjected{false};
   stdlib::StdRuntime stdRuntime;
+  std::string lastErrorMessage;
 };
 
 bool CodeGenModule::Impl::generate(const ast::Program& program) {
+  lastErrorMessage.clear();
   module = std::make_unique<llvm::Module>(moduleName, context);
   functions.clear();
   structDecls.clear();
@@ -273,7 +276,15 @@ bool CodeGenModule::Impl::generate(const ast::Program& program) {
 
   injectStdRuntime();
 
-  return !llvm::verifyModule(*module, &llvm::errs());
+  std::string verifyErrors;
+  llvm::raw_string_ostream verifyStream(verifyErrors);
+  const bool invalid = llvm::verifyModule(*module, &verifyStream);
+  verifyStream.flush();
+  if (invalid) {
+    lastErrorMessage = verifyErrors.empty() ? "LLVM module verification failed" : verifyErrors;
+    return false;
+  }
+  return true;
 }
 
 llvm::PointerType* CodeGenModule::Impl::getBytePtrType() {
@@ -1337,12 +1348,16 @@ llvm::LLVMContext& CodeGenModule::context() { return impl->getContext(); }
 
 std::string CodeGenModule::emitIR() const { return impl->emitIR(); }
 
+std::string CodeGenModule::lastError() const { return impl->lastError(); }
+
 CodeGenResult emitModuleIR(const ast::Program& program, std::string moduleName) {
   CodeGenModule codegen(std::move(moduleName));
   CodeGenResult result;
   result.success = codegen.generate(program);
   if (result.success) {
     result.ir = codegen.emitIR();
+  } else {
+    result.error = codegen.lastError();
   }
   return result;
 }

@@ -22,6 +22,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(DHAD_FORCE_PARSER_REBUILD "Force regeneration of parser tables." OFF)
+option(DHAD_BUILD_WASM "Build the Emscripten WASM web API target." OFF)
 set(DHAD_PYTHON_VENV_DIR "${CMAKE_CURRENT_SOURCE_DIR}/.venv"
     CACHE PATH "Shared Python virtual environment directory.")
 
@@ -174,6 +175,13 @@ target_include_directories(dhad_codegen PUBLIC src)
 target_include_directories(dhad_codegen SYSTEM PUBLIC ${LLVM_INCLUDE_DIRS})
 dhad_strict_warnings(dhad_codegen)
 
+add_library(dhad_pipeline STATIC src/pipeline/compiler.cpp)
+target_link_libraries(dhad_pipeline PUBLIC dhad_parser dhad_codegen dhad_typing)
+target_include_directories(dhad_pipeline PUBLIC src)
+target_include_directories(dhad_pipeline SYSTEM PUBLIC ${LLVM_INCLUDE_DIRS})
+add_dependencies(dhad_pipeline parser_tables_gen)
+dhad_strict_warnings(dhad_pipeline)
+
 # ------------------------------------------------------------------------------
 # Executables
 # ------------------------------------------------------------------------------
@@ -193,11 +201,33 @@ add_dependencies(codegen_ex1 parser_tables_gen)
 dhad_strict_warnings(codegen_ex1)
 
 add_executable(dhad src/main.cpp)
-target_link_libraries(dhad PRIVATE dhad_parser dhad_codegen dhad_typing)
+target_link_libraries(dhad PRIVATE dhad_pipeline)
 target_include_directories(dhad PRIVATE src "${CMAKE_CURRENT_BINARY_DIR}/generated")
 add_dependencies(dhad parser_tables_gen)
 target_compile_definitions(dhad PRIVATE DHAD_DEFAULT_CLANG="${CMAKE_C_COMPILER}")
 dhad_strict_warnings(dhad)
+
+if(DHAD_BUILD_WASM)
+  if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+    message(FATAL_ERROR "DHAD_BUILD_WASM requires the Emscripten toolchain")
+  endif()
+
+  add_executable(dhad_web src/web/api.cpp)
+  target_link_libraries(dhad_web PRIVATE dhad_pipeline)
+  target_include_directories(dhad_web PRIVATE src "${CMAKE_CURRENT_BINARY_DIR}/generated")
+  add_dependencies(dhad_web parser_tables_gen)
+  dhad_strict_warnings(dhad_web)
+  target_link_options(
+    dhad_web
+    PRIVATE
+      "SHELL:--no-entry"
+      "SHELL:-s WASM=1"
+      "SHELL:-s MODULARIZE=1"
+      "SHELL:-s ENVIRONMENT=web,worker"
+      "SHELL:-s EXPORTED_FUNCTIONS=['_dhad_parse_ast','_dhad_run','_dhad_free']"
+      "SHELL:-s EXPORTED_RUNTIME_METHODS=['ccall','cwrap']"
+      "SHELL:-s ALLOW_MEMORY_GROWTH=1")
+endif()
 
 # ------------------------------------------------------------------------------
 # Testing

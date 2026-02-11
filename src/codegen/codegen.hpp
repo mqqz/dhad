@@ -23,6 +23,7 @@ public:
   llvm::LLVMContext& context();
 
   [[nodiscard]] std::string emitIR() const;
+  [[nodiscard]] std::string lastError() const;
 
 private:
   struct Impl;
@@ -32,6 +33,7 @@ private:
 struct CodeGenResult {
   bool success{false};
   std::string ir;
+  std::string error;
 };
 
 CodeGenResult emitModuleIR(const ast::Program& program, std::string moduleName = "dhad");

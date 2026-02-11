@@ -1,6 +1,4 @@
-#include "codegen/codegen.hpp"
-#include "parser/parser.hpp"
-#include "typing/checker.hpp"
+#include "pipeline/compiler.hpp"
 
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/FileSystem.h>
@@ -8,11 +6,9 @@
 #include <llvm/Support/raw_ostream.h>
 
 #include <cstdlib>
-#include <filesystem>
 #include <iostream>
 #include <optional>
 #include <string>
-#include <unordered_set>
 #include <vector>
 
 namespace {
@@ -122,78 +118,6 @@ bool invokeClang(const std::string& inputIR, const std::string& outputPath) {
   return true;
 }
 
-void printTypeErrors(const dhad::typing::TypeCheckerResult& result, const std::string& source) {
-  for (const auto& error : result.errors) {
-    std::cerr << dhad::typing::formatTypeError(error, source) << "\n";
-  }
-}
-
-using ImportSet = std::unordered_set<std::string>;
-
-std::string pathKey(const std::filesystem::path& path) {
-  return std::filesystem::absolute(path).lexically_normal().string();
-}
-
-std::filesystem::path resolveImportPath(const std::string& module,
-                                        const std::filesystem::path& sourcePath) {
-  std::filesystem::path name(module);
-  if (name.extension() != ".dh") {
-    name += ".dh";
-  }
-  return sourcePath.parent_path() / name;
-}
-
-bool mergeImports(dhad::ast::Program& program, const std::filesystem::path& sourcePath,
-                  ImportSet& seen, std::string& error) {
-  std::vector<dhad::ast::NodePtr<dhad::ast::ASTNode>> merged;
-
-  for (auto& node : program.topLevel) {
-    auto* importDecl = llvm::dyn_cast<dhad::ast::ImportDecl>(node.get());
-    if (!importDecl) {
-      continue;
-    }
-    auto importPath = resolveImportPath(importDecl->module, sourcePath);
-    std::error_code ec;
-    if (!std::filesystem::exists(importPath, ec) || ec) {
-      error = "error: import '" + importDecl->module + "' not found (expected " +
-              importPath.string() + ")";
-      return false;
-    }
-    const auto key = pathKey(importPath);
-    if (!seen.insert(key).second) {
-      continue;
-    }
-
-    auto importResult = dhad::parser::parseFile(importPath.string());
-    if (!importResult.success || !importResult.root) {
-      error = "error: failed to parse import '" + importDecl->module + "'";
-      return false;
-    }
-    auto* importProgram = llvm::dyn_cast<dhad::ast::Program>(importResult.root.get());
-    if (!importProgram) {
-      error = "error: import '" + importDecl->module + "' did not produce a Program root";
-      return false;
-    }
-    if (!mergeImports(*importProgram, importPath, seen, error)) {
-      return false;
-    }
-    for (auto& importedNode : importProgram->topLevel) {
-      if (!llvm::isa<dhad::ast::ImportDecl>(importedNode.get())) {
-        merged.push_back(std::move(importedNode));
-      }
-    }
-  }
-
-  for (auto& node : program.topLevel) {
-    if (!llvm::isa<dhad::ast::ImportDecl>(node.get())) {
-      merged.push_back(std::move(node));
-    }
-  }
-
-  program.topLevel = std::move(merged);
-  return true;
-}
-
 } // namespace
 
 int main(int argc, char** argv) {
@@ -208,40 +132,18 @@ int main(int argc, char** argv) {
   }
   const auto& opts = *optsOr;
 
-  auto parseResult = dhad::parser::parseFile(opts.inputPath);
-  if (!parseResult.success || !parseResult.root) {
-    std::cerr << "error: failed to parse " << opts.inputPath << "\n";
+  dhad::pipeline::CompileOptions compileOptions;
+  compileOptions.sourceName = opts.inputPath;
+  compileOptions.moduleName = opts.outputPath;
+  compileOptions.includeIR = true;
+
+  auto result = dhad::pipeline::compileFile(opts.inputPath, compileOptions);
+  if (!result.success) {
+    std::cerr << result.stderrBuffer;
     return 1;
   }
 
-  auto* program = llvm::dyn_cast<dhad::ast::Program>(parseResult.root.get());
-  if (!program) {
-    std::cerr << "error: parser did not produce a Program root\n";
-    return 1;
-  }
-
-  ImportSet imported;
-  imported.insert(pathKey(std::filesystem::path(opts.inputPath)));
-  std::string importError;
-  if (!mergeImports(*program, std::filesystem::path(opts.inputPath), imported, importError)) {
-    std::cerr << importError << "\n";
-    return 1;
-  }
-
-  dhad::typing::TypeChecker checker;
-  auto typeResult = checker.check(*program);
-  if (!typeResult.success) {
-    printTypeErrors(typeResult, opts.inputPath);
-    return 1;
-  }
-
-  dhad::codegen::CodeGenModule codegen(opts.outputPath);
-  if (!codegen.generate(*program)) {
-    std::cerr << "error: code generation failed\n";
-    return 1;
-  }
-
-  const std::string irText = codegen.emitIR();
+  const std::string& irText = result.ir;
   if (opts.emitIROnly) {
     std::cout << irText;
     return 0;
