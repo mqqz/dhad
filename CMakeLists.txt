@@ -175,8 +175,13 @@ target_include_directories(dhad_codegen PUBLIC src)
 target_include_directories(dhad_codegen SYSTEM PUBLIC ${LLVM_INCLUDE_DIRS})
 dhad_strict_warnings(dhad_codegen)
 
+add_library(dhad_interp STATIC src/interp/interpreter.cpp)
+target_link_libraries(dhad_interp PUBLIC dhad_ast)
+target_include_directories(dhad_interp PUBLIC src)
+dhad_strict_warnings(dhad_interp)
+
 add_library(dhad_pipeline STATIC src/pipeline/compiler.cpp)
-target_link_libraries(dhad_pipeline PUBLIC dhad_parser dhad_codegen dhad_typing)
+target_link_libraries(dhad_pipeline PUBLIC dhad_parser dhad_codegen dhad_typing dhad_interp)
 target_include_directories(dhad_pipeline PUBLIC src)
 target_include_directories(dhad_pipeline SYSTEM PUBLIC ${LLVM_INCLUDE_DIRS})
 add_dependencies(dhad_pipeline parser_tables_gen)
@@ -199,6 +204,18 @@ add_executable(codegen_ex1 EXCLUDE_FROM_ALL tests/codegen_ex1.cpp)
 target_link_libraries(codegen_ex1 PRIVATE dhad_parser dhad_codegen dhad_typing)
 add_dependencies(codegen_ex1 parser_tables_gen)
 dhad_strict_warnings(codegen_ex1)
+
+add_executable(interp_smoke tests/interp_smoke.cpp)
+target_link_libraries(interp_smoke PRIVATE dhad_pipeline)
+target_include_directories(interp_smoke PRIVATE src "${CMAKE_CURRENT_BINARY_DIR}/generated")
+add_dependencies(interp_smoke parser_tables_gen)
+dhad_strict_warnings(interp_smoke)
+
+add_executable(interp_resolver_smoke tests/interp_resolver_smoke.cpp)
+target_link_libraries(interp_resolver_smoke PRIVATE dhad_pipeline)
+target_include_directories(interp_resolver_smoke PRIVATE src "${CMAKE_CURRENT_BINARY_DIR}/generated")
+add_dependencies(interp_resolver_smoke parser_tables_gen)
+dhad_strict_warnings(interp_resolver_smoke)
 
 add_executable(dhad src/main.cpp)
 target_link_libraries(dhad PRIVATE dhad_pipeline)
@@ -439,4 +456,12 @@ if(BUILD_TESTING)
       --case
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/sources/array_index_write_runtime.dh"
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/expectations/array_index_write_ir_contains.txt")
+
+  add_test(
+    NAME interp_smoke
+    COMMAND "$<TARGET_FILE:interp_smoke>")
+
+  add_test(
+    NAME interp_resolver_smoke
+    COMMAND "$<TARGET_FILE:interp_resolver_smoke>")
 endif()

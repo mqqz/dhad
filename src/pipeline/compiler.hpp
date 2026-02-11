@@ -16,6 +16,7 @@ enum class DiagnosticStage {
   ImportResolution,
   TypeCheck,
   CodeGen,
+  Runtime,
   Io,
 };
 
@@ -52,7 +53,22 @@ struct CompileResult {
   std::string stderrBuffer;
 };
 
+struct RunOptions {
+  std::string sourceName{"<memory>"};
+  ModuleResolver moduleResolver;
+};
+
+struct RunResult {
+  bool success{false};
+  int exitCode{1};
+  std::vector<Diagnostic> diagnostics;
+  std::string stdoutBuffer;
+  std::string stderrBuffer;
+};
+
 CompileResult compileString(std::string source, const CompileOptions& options = {});
 CompileResult compileFile(const std::string& path, const CompileOptions& options = {});
+RunResult runString(std::string source, const RunOptions& options = {});
+RunResult runFile(const std::string& path, const RunOptions& options = {});
 
 } // namespace dhad::pipeline

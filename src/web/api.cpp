@@ -50,21 +50,14 @@ DHAD_WEB_EXPORT char* dhad_run(const char* source) {
     return failCString("null source");
   }
 
-  dhad::pipeline::CompileOptions options;
+  dhad::pipeline::RunOptions options;
   options.sourceName = "<memory>";
-  options.includeAstDump = false;
-  options.includeIR = true;
 
-  auto result = dhad::pipeline::compileString(std::string(source), options);
+  auto result = dhad::pipeline::runString(std::string(source), options);
   if (!result.success) {
     return allocCString(result.stderrBuffer);
   }
-
-  if (!result.stdoutBuffer.empty()) {
-    return allocCString(result.stdoutBuffer);
-  }
-
-  return failCString("dhad_run is not available in this build (execution backend not implemented)");
+  return allocCString(result.stdoutBuffer);
 }
 
 DHAD_WEB_EXPORT void dhad_free(char* ptr) { std::free(ptr); }

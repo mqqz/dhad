@@ -1,6 +1,7 @@
 #include "pipeline/compiler.hpp"
 
 #include "../codegen/codegen.hpp"
+#include "../interp/interpreter.hpp"
 #include "../parser/parser.hpp"
 #include "../std/identifiers.hpp"
 #include "../typing/checker.hpp"
@@ -22,7 +23,17 @@ namespace {
 
 using ImportSet = std::unordered_set<std::string>;
 
-void appendDiagnostic(CompileResult& out, Diagnostic diagnostic) {
+struct PipelinePrepOptions {
+  std::string sourceName;
+  ModuleResolver moduleResolver;
+};
+
+struct PreparedProgram {
+  std::unique_ptr<ast::ASTNode> root;
+  ast::Program* program{nullptr};
+};
+
+template <typename ResultT> void appendDiagnostic(ResultT& out, Diagnostic diagnostic) {
   std::ostringstream line;
   if (!diagnostic.sourceName.empty()) {
     line << diagnostic.sourceName;
@@ -58,10 +69,10 @@ bool isStdModuleImport(std::string_view moduleName) {
   return moduleName == withExtension;
 }
 
-std::optional<ResolvedModule> resolveModule(const CompileOptions& options, std::string_view moduleName,
+std::optional<ResolvedModule> resolveModule(const ModuleResolver& resolver, std::string_view moduleName,
                                             std::string_view importerSourceName) {
-  if (options.moduleResolver) {
-    return options.moduleResolver(moduleName, importerSourceName);
+  if (resolver) {
+    return resolver(moduleName, importerSourceName);
   }
 
   const auto resolvedPath = resolveImportPath(moduleName, importerSourceName);
@@ -74,8 +85,9 @@ std::optional<ResolvedModule> resolveModule(const CompileOptions& options, std::
   return ResolvedModule{resolvedPath.string(), buffer.str()};
 }
 
-bool mergeImports(ast::Program& program, std::string_view sourceName, const CompileOptions& options,
-                  ImportSet& visited, CompileResult& out) {
+template <typename ResultT>
+bool mergeImports(ast::Program& program, std::string_view sourceName, const PipelinePrepOptions& options,
+                  ImportSet& visited, ResultT& out) {
   std::vector<ast::NodePtr<ast::ASTNode>> merged;
 
   for (auto& node : program.topLevel) {
@@ -88,7 +100,7 @@ bool mergeImports(ast::Program& program, std::string_view sourceName, const Comp
     }
 
     const auto expectedPath = resolveImportPath(importDecl->module, sourceName);
-    auto module = resolveModule(options, importDecl->module, sourceName);
+    auto module = resolveModule(options.moduleResolver, importDecl->module, sourceName);
     if (!module) {
       std::string message = "import '" + importDecl->module + "' not found";
       if (!options.moduleResolver) {
@@ -143,23 +155,21 @@ bool mergeImports(ast::Program& program, std::string_view sourceName, const Comp
   return true;
 }
 
-} // namespace
-
-CompileResult compileString(std::string source, const CompileOptions& options) {
-  CompileResult out;
-
+template <typename ResultT>
+bool prepareProgram(std::string source, const PipelinePrepOptions& options, ResultT& out,
+                    PreparedProgram& prepared) {
   auto parseResult = parser::parseString(std::move(source));
   if (!parseResult.success || !parseResult.root) {
     appendDiagnostic(out, Diagnostic{DiagnosticStage::Parse, "", std::nullopt,
                                      "failed to parse " + options.sourceName});
-    return out;
+    return false;
   }
 
   auto* program = llvm::dyn_cast<ast::Program>(parseResult.root.get());
   if (!program) {
     appendDiagnostic(out, Diagnostic{DiagnosticStage::Parse, "", std::nullopt,
                                      "parser did not produce a Program root"});
-    return out;
+    return false;
   }
 
   ImportSet visited;
@@ -167,7 +177,7 @@ CompileResult compileString(std::string source, const CompileOptions& options) {
     visited.insert(pathKey(std::filesystem::path(options.sourceName)));
   }
   if (!mergeImports(*program, options.sourceName, options, visited, out)) {
-    return out;
+    return false;
   }
 
   typing::TypeChecker checker;
@@ -177,18 +187,34 @@ CompileResult compileString(std::string source, const CompileOptions& options) {
       appendDiagnostic(out, Diagnostic{DiagnosticStage::TypeCheck, options.sourceName, error.location,
                                        error.message});
     }
+    return false;
+  }
+
+  prepared.program = program;
+  prepared.root = std::move(parseResult.root);
+  return true;
+}
+
+} // namespace
+
+CompileResult compileString(std::string source, const CompileOptions& options) {
+  CompileResult out;
+  const PipelinePrepOptions prepOptions{options.sourceName, options.moduleResolver};
+  PreparedProgram prepared;
+
+  if (!prepareProgram(std::move(source), prepOptions, out, prepared)) {
     return out;
   }
 
   if (options.includeAstDump) {
     llvm::raw_string_ostream astStream(out.astDump);
-    program->dump(astStream);
+    prepared.program->dump(astStream);
     astStream.flush();
   }
 
   if (options.includeIR) {
     codegen::CodeGenModule codegen(options.moduleName);
-    if (!codegen.generate(*program)) {
+    if (!codegen.generate(*prepared.program)) {
       appendDiagnostic(out, Diagnostic{DiagnosticStage::CodeGen, "", std::nullopt,
                                        codegen.lastError().empty() ? "code generation failed"
                                                                     : codegen.lastError()});
@@ -216,6 +242,47 @@ CompileResult compileFile(const std::string& path, const CompileOptions& options
   CompileOptions fileOptions = options;
   fileOptions.sourceName = path;
   return compileString(buffer.str(), fileOptions);
+}
+
+RunResult runString(std::string source, const RunOptions& options) {
+  RunResult out;
+  const PipelinePrepOptions prepOptions{options.sourceName, options.moduleResolver};
+  PreparedProgram prepared;
+  if (!prepareProgram(std::move(source), prepOptions, out, prepared)) {
+    return out;
+  }
+
+  interp::Interpreter interpreter;
+  auto runtimeResult = interpreter.run(*prepared.program);
+  out.stdoutBuffer = runtimeResult.stdoutBuffer;
+  out.exitCode = runtimeResult.exitCode;
+  if (!runtimeResult.success) {
+    for (const auto& error : runtimeResult.errors) {
+      appendDiagnostic(out, Diagnostic{DiagnosticStage::Runtime, options.sourceName, error.location,
+                                       error.message});
+    }
+    return out;
+  }
+
+  out.success = true;
+  return out;
+}
+
+RunResult runFile(const std::string& path, const RunOptions& options) {
+  std::ifstream input(path);
+  if (!input) {
+    RunResult out;
+    appendDiagnostic(out, Diagnostic{DiagnosticStage::Io, path, std::nullopt,
+                                     "failed to open input file"});
+    return out;
+  }
+
+  std::ostringstream buffer;
+  buffer << input.rdbuf();
+
+  RunOptions fileOptions = options;
+  fileOptions.sourceName = path;
+  return runString(buffer.str(), fileOptions);
 }
 
 } // namespace dhad::pipeline

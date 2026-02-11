@@ -45,4 +45,33 @@ The language uses a handwritten LALR(1) parser and an LLVM backend (so hopefully
   edit the grammar.
 - `make format` runs `clang-format` over `src/` and `tests/`.
 
+## Embedding (Playground)
+
+`dhad` exposes a reusable pipeline API in `src/pipeline/compiler.hpp`:
+
+- `compileString(...)` for parse + typecheck + IR generation.
+- `runString(...)` for parse + typecheck + AST interpretation with buffered output.
+
+For browser-style multi-file projects, inject modules from memory using `RunOptions::moduleResolver`:
+
+```cpp
+std::unordered_map<std::string, std::string> modules{
+    {"util", u8R"(دالة حي(): نص { أعد "ok"؛ })"},
+    {"util.dh", u8R"(دالة حي(): نص { أعد "ok"؛ })"},
+};
+
+dhad::pipeline::RunOptions opts;
+opts.sourceName = "<memory>";
+opts.moduleResolver = [&modules](std::string_view module, std::string_view) {
+  auto it = modules.find(std::string(module));
+  if (it == modules.end()) {
+    return std::optional<dhad::pipeline::ResolvedModule>{};
+  }
+  return std::optional<dhad::pipeline::ResolvedModule>{
+      dhad::pipeline::ResolvedModule{std::string(module), it->second}};
+};
+
+auto result = dhad::pipeline::runString(u8R"(استورد util؛ دالة بداية(): عدد { اطبع(حي())؛ أعد 0؛ })", opts);
+```
+
 Contributions are welcome, just be aware that the design is changing quickly and I am still figuring out the fundamentals. Tune in via issues/PRs if you want to help shape the language.
