@@ -4,6 +4,7 @@
 #include "../std/identifiers.hpp"
 #include "../std/runtime.hpp"
 
+#include <llvm/Config/llvm-config.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/Function.h>
@@ -102,6 +103,22 @@ bool parseFloatLiteral(std::string_view text, float& out) {
   return true;
 }
 
+llvm::FunctionCallee getTrapIntrinsic(llvm::Module& module) {
+#if LLVM_VERSION_MAJOR >= 19
+  return llvm::Intrinsic::getOrInsertDeclaration(&module, llvm::Intrinsic::trap);
+#else
+  return llvm::Intrinsic::getDeclaration(&module, llvm::Intrinsic::trap);
+#endif
+}
+
+void setModuleTargetTriple(llvm::Module& module) {
+#if LLVM_VERSION_MAJOR >= 21
+  module.setTargetTriple(llvm::Triple(getDefaultTargetTriple()));
+#else
+  module.setTargetTriple(getDefaultTargetTriple());
+#endif
+}
+
 } // namespace
 
 struct CodeGenModule::Impl {
@@ -153,7 +170,7 @@ struct CodeGenModule::Impl {
   explicit Impl(std::string name)
       : moduleName(std::move(name)), module(std::make_unique<llvm::Module>(moduleName, context)),
         builder(context) {
-    module->setTargetTriple(llvm::Triple(getDefaultTargetTriple()));
+    setModuleTargetTriple(*module);
   }
 
   bool generate(const ast::Program& program);
@@ -367,8 +384,7 @@ llvm::Value* CodeGenModule::Impl::emitCheckedArrayDataPtr(llvm::Value* arrayValu
   builder.CreateCondBr(inRange, okBB, failBB);
 
   builder.SetInsertPoint(failBB);
-  auto trap = llvm::Intrinsic::getOrInsertDeclaration(module.get(), llvm::Intrinsic::trap);
-  builder.CreateCall(trap, {});
+  builder.CreateCall(getTrapIntrinsic(*module), {});
   builder.CreateUnreachable();
 
   builder.SetInsertPoint(okBB);
