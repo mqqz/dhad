@@ -1,0 +1,47 @@
+name: Tests
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - codegen: "ON"
+            sanitize: "OFF"
+          - codegen: "OFF"
+            sanitize: "OFF"
+          - codegen: "ON"
+            sanitize: "ON"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install LLVM
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-18 llvm-18-dev
+          echo /usr/lib/llvm-18/bin >> "$GITHUB_PATH"
+      - name: Configure
+        shell: bash
+        run: |
+          flags=()
+          if [[ '${{ matrix.sanitize }}' == 'ON' ]]; then
+            flags+=('-DCMAKE_CXX_FLAGS=-fsanitize=undefined -fno-sanitize-recover=all')
+            flags+=('-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=undefined')
+          fi
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_COMPILER=clang-18 -DCMAKE_CXX_COMPILER=clang++-18 \
+            -DLLVM_DIR=/usr/lib/llvm-18/lib/cmake/llvm \
+            -DDHAD_ENABLE_CODEGEN=${{ matrix.codegen }} "${flags[@]}"
+      - name: Build and test
+        run: |
+          cmake --build build --target dhad_check --parallel 4
+          ctest --test-dir build --output-on-failure

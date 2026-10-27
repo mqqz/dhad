@@ -142,7 +142,7 @@ add_compile_definitions(
 
 function(dhad_strict_warnings target)
   if(MSVC)
-    target_compile_options(${target} PRIVATE /W4)
+    target_compile_options(${target} PRIVATE /W4 /utf-8)
   else()
     target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)
   endif()
@@ -227,14 +227,19 @@ if(NOT DHAD_BUILD_WASM)
 endif()
 
 if(DHAD_ENABLE_CODEGEN)
-  add_executable(codegen_ex1 EXCLUDE_FROM_ALL tests/codegen_ex1.cpp)
+  add_executable(codegen_ex1 tests/codegen_ex1.cpp)
   target_link_libraries(codegen_ex1 PRIVATE dhad_parser dhad_codegen dhad_typing)
   add_dependencies(codegen_ex1 parser_tables_gen)
   dhad_strict_warnings(codegen_ex1)
 endif()
 
 if(NOT DHAD_BUILD_WASM)
+  add_executable(interp_runner tests/interp_runner.cpp)
+  target_link_libraries(interp_runner PRIVATE dhad_pipeline)
+  dhad_strict_warnings(interp_runner)
+
   add_executable(interp_smoke tests/interp_smoke.cpp)
+  target_compile_definitions(interp_smoke PRIVATE DHAD_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
   target_link_libraries(interp_smoke PRIVATE dhad_pipeline)
   target_include_directories(interp_smoke PRIVATE src "${CMAKE_CURRENT_BINARY_DIR}/generated")
   add_dependencies(interp_smoke parser_tables_gen)
@@ -251,12 +256,10 @@ add_executable(dhad src/main.cpp)
 target_link_libraries(dhad PRIVATE dhad_pipeline)
 target_include_directories(dhad PRIVATE src "${CMAKE_CURRENT_BINARY_DIR}/generated")
 add_dependencies(dhad parser_tables_gen)
-if(DHAD_ENABLE_CODEGEN)
-  target_compile_definitions(dhad PRIVATE DHAD_DEFAULT_CLANG="${CMAKE_C_COMPILER}")
-endif()
 dhad_strict_warnings(dhad)
 
 if(DHAD_BUILD_WASM)
+  set(DHAD_WEB_OUTPUT_DIR "${CMAKE_SOURCE_DIR}/build" CACHE PATH "Directory for web artifacts")
   if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     message(FATAL_ERROR "DHAD_BUILD_WASM requires the Emscripten toolchain")
   endif()
@@ -266,7 +269,7 @@ if(DHAD_BUILD_WASM)
   target_include_directories(dhad_web PRIVATE src "${CMAKE_CURRENT_BINARY_DIR}/generated")
   add_dependencies(dhad_web parser_tables_gen)
   set_target_properties(dhad_web PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/build"
+    RUNTIME_OUTPUT_DIRECTORY "${DHAD_WEB_OUTPUT_DIR}"
     OUTPUT_NAME "dhad_web")
   dhad_strict_warnings(dhad_web)
   target_link_options(
@@ -277,7 +280,7 @@ if(DHAD_BUILD_WASM)
       "SHELL:-s MODULARIZE=1"
       "SHELL:-s ENVIRONMENT=web,worker"
       "SHELL:-s EXPORTED_FUNCTIONS=['_dhad_parse_ast','_dhad_run','_dhad_free']"
-      "SHELL:-s EXPORTED_RUNTIME_METHODS=['ccall','cwrap','UTF8ToString','allocateUTF8']"
+      "SHELL:-s EXPORTED_RUNTIME_METHODS=['ccall','cwrap','UTF8ToString','stringToNewUTF8']"
       "SHELL:-s ALLOW_MEMORY_GROWTH=1")
 endif()
 
@@ -286,6 +289,16 @@ endif()
 # ------------------------------------------------------------------------------
 
 if(BUILD_TESTING)
+  set(_dhad_regression_args --interp "$<TARGET_FILE:interp_runner>")
+  if(DHAD_ENABLE_CODEGEN)
+    list(APPEND _dhad_regression_args --native "$<TARGET_FILE:dhad>")
+  endif()
+  add_test(NAME runtime_regressions
+    COMMAND "${DHAD_TEST_PYTHON}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_runtime_tests.py" ${_dhad_regression_args})
+  add_custom_target(dhad_check DEPENDS dhad lang_driver interp_runner interp_smoke interp_resolver_smoke)
+  if(DHAD_ENABLE_CODEGEN)
+    add_dependencies(dhad_check codegen_ex1)
+  endif()
   add_test(
     NAME lexer_smoke
     COMMAND

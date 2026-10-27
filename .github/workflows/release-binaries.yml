@@ -6,6 +6,9 @@ on:
       - "v*"
   workflow_dispatch:
 
+env:
+  PYTHONUTF8: "1"
+
 permissions:
   contents: write
 
@@ -21,22 +24,24 @@ jobs:
             target: linux-x86_64
             archive: tar.gz
             generator: Unix Makefiles
-            codegen: ON
-          - os: macos-14
+            codegen: "ON"
+          - os: macos-15-intel
+            architecture: x86_64
             target: macos-x86_64
             archive: tar.gz
             generator: Unix Makefiles
-            codegen: ON
-          - os: macos-14
+            codegen: "ON"
+          - os: macos-15
+            architecture: arm64
             target: macos-arm64
             archive: tar.gz
             generator: Unix Makefiles
-            codegen: ON
+            codegen: "ON"
           - os: windows-latest
             target: windows-x86_64
             archive: zip
             generator: NMake Makefiles
-            codegen: OFF
+            codegen: "OFF"
 
     steps:
       - name: Checkout
@@ -52,57 +57,19 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y clang llvm-dev
+          echo "LLVM_DIR=$(llvm-config --cmakedir)" >> "$GITHUB_ENV"
+          echo "$(llvm-config --bindir)" >> "$GITHUB_PATH"
+          echo "CC=$(llvm-config --bindir)/clang" >> "$GITHUB_ENV"
+          echo "CXX=$(llvm-config --bindir)/clang++" >> "$GITHUB_ENV"
 
       - name: Install macOS dependencies
         if: runner.os == 'macOS'
         run: |
           brew install llvm
           echo "LLVM_DIR=$(brew --prefix llvm)/lib/cmake/llvm" >> "$GITHUB_ENV"
-
-      - name: Install Windows dependencies
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          if ("${{ matrix.codegen }}" -eq "ON") {
-            choco install llvm --no-progress -y
-            $resolvedLLVMDir = $null
-            $candidateBins = @(
-              "C:\Program Files\LLVM\bin",
-              "C:\ProgramData\chocolatey\lib\llvm\tools\llvm\bin"
-            )
-            foreach ($binPath in $candidateBins) {
-              if (Test-Path $binPath) {
-                $binPath | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-              }
-            }
-
-            $llvmConfigCmd = Get-Command llvm-config.exe -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($llvmConfigCmd) {
-              $llvmCmakeDir = & $llvmConfigCmd.Source --cmakedir
-              if ($LASTEXITCODE -eq 0 -and $llvmCmakeDir -and (Test-Path $llvmCmakeDir)) {
-                $resolvedLLVMDir = $llvmCmakeDir
-              }
-            }
-
-            if (-not $resolvedLLVMDir) {
-              $candidateRoots = @(
-                "C:\Program Files\LLVM",
-                "C:\ProgramData\chocolatey\lib\llvm",
-                "$env:ChocolateyInstall\lib\llvm"
-              ) | Where-Object { $_ -and (Test-Path $_) }
-
-              $llvmConfig = $null
-              foreach ($root in $candidateRoots) {
-                $llvmConfig = Get-ChildItem -Path $root -Filter LLVMConfig.cmake -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-                if ($llvmConfig) { break }
-              }
-              if (-not $llvmConfig) {
-                throw "LLVMConfig.cmake not found. Checked: $($candidateRoots -join ', ')"
-              }
-              $resolvedLLVMDir = $llvmConfig.Directory.FullName
-            }
-            "LLVM_DIR=$resolvedLLVMDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          }
+          echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
+          echo "CC=$(brew --prefix llvm)/bin/clang" >> "$GITHUB_ENV"
+          echo "CXX=$(brew --prefix llvm)/bin/clang++" >> "$GITHUB_ENV"
 
       - name: Setup MSVC environment
         if: runner.os == 'Windows'
@@ -114,11 +81,55 @@ jobs:
           echo "Generator: ${{ matrix.generator }}"
           echo "LLVM_DIR: ${LLVM_DIR:-<unset>}"
 
-      - name: Configure
-        run: cmake -S . -B build -G "${{ matrix.generator }}" -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DDHAD_ENABLE_CODEGEN=${{ matrix.codegen }}
+      - name: Configure (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          cmake -S . -B build -G "${{ matrix.generator }}" \
+            -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON \
+            -DDHAD_ENABLE_CODEGEN=ON \
+            -DCMAKE_C_COMPILER="$CC" -DCMAKE_CXX_COMPILER="$CXX" \
+            -DCMAKE_OSX_ARCHITECTURES="${{ matrix.architecture }}"
 
-      - name: Build dhad
-        run: cmake --build build --target dhad --parallel
+      - name: Configure (Windows)
+        if: runner.os == 'Windows'
+        run: cmake -S . -B build -G "${{ matrix.generator }}" -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DDHAD_ENABLE_CODEGEN=OFF -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl
+
+      - name: Build compiler and tests
+        run: cmake --build build --parallel
+
+      - name: Build codegen test driver
+        if: matrix.codegen == 'ON'
+        run: cmake --build build --target codegen_ex1 --parallel
+
+      - name: Run tests
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Verify binary and example (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          if [[ "${{ runner.os }}" == "macOS" ]]; then
+            test "$(lipo -archs build/dhad)" = "${{ matrix.architecture }}"
+          else
+            file build/dhad | grep -q 'x86-64'
+          fi
+          ./build/dhad examples/hello-world.dh -o build/hello-smoke
+          test "$(./build/hello-smoke)" = 'مرحبا يا عالم'
+
+      - name: Verify binary and example (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $binary = [System.IO.File]::ReadAllBytes("$pwd/build/dhad.exe")
+          $peOffset = [BitConverter]::ToInt32($binary, 0x3c)
+          if ([BitConverter]::ToUInt16($binary, $peOffset + 4) -ne 0x8664) {
+            throw "Expected an x86_64 PE executable"
+          }
+          $output = & ./build/dhad.exe examples/hello-world.dh
+          if ($LASTEXITCODE -ne 0 -or $output -ne 'مرحبا يا عالم') {
+            throw "Interpreter hello-world smoke test failed"
+          }
 
       - name: Package (Unix)
         if: runner.os != 'Windows'
@@ -127,6 +138,7 @@ jobs:
           cp build/dhad dist/dhad-${{ matrix.target }}/
           cp LICENSE dist/dhad-${{ matrix.target }}/
           cp README.md dist/dhad-${{ matrix.target }}/
+          cp -r examples dist/dhad-${{ matrix.target }}/
           tar -C dist -czf dhad-${{ matrix.target }}.tar.gz dhad-${{ matrix.target }}
 
       - name: Package (Windows)
@@ -137,6 +149,7 @@ jobs:
           Copy-Item build/dhad.exe dist/dhad-${{ matrix.target }}/
           Copy-Item LICENSE dist/dhad-${{ matrix.target }}/
           Copy-Item README.md dist/dhad-${{ matrix.target }}/
+          Copy-Item examples dist/dhad-${{ matrix.target }}/ -Recurse
           Compress-Archive -Path dist/dhad-${{ matrix.target }} -DestinationPath dhad-${{ matrix.target }}.zip -Force
 
       - name: Upload workflow artifact

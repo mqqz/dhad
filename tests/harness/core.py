@@ -49,6 +49,7 @@ def run_command(cmd: Sequence[str],
       input=input_data,
       capture_output=True,
       text=text,
+      encoding="utf-8" if text else None,
       check=False,
   )
   if result.returncode not in allowed_returncodes:

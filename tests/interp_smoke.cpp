@@ -8,15 +8,7 @@
 namespace {
 
 std::filesystem::path resolvePath(const std::string& relativePath) {
-  const std::filesystem::path direct(relativePath);
-  if (std::filesystem::exists(direct)) {
-    return direct;
-  }
-  const std::filesystem::path parent = std::filesystem::path("..") / relativePath;
-  if (std::filesystem::exists(parent)) {
-    return parent;
-  }
-  return direct;
+  return std::filesystem::path(DHAD_TEST_SOURCE_DIR) / relativePath;
 }
 
 bool expectSuccessCase(const std::string& file, int expectedExit, std::string_view expectedOutput) {
@@ -52,8 +44,9 @@ bool expectFailureContains(const std::string& file, std::string_view expectedFra
     return false;
   }
   if (result.stderrBuffer.find(expectedFragment) == std::string::npos) {
-    std::cerr << "Missing expected diagnostic fragment for " << file << ": "
-              << expectedFragment << "\nActual:\n" << result.stderrBuffer;
+    std::cerr << "Missing expected diagnostic fragment for " << file << ": " << expectedFragment
+              << "\nActual:\n"
+              << result.stderrBuffer;
     return false;
   }
   return true;
@@ -70,7 +63,8 @@ int main() {
   ok &= expectSuccessCase("tests/sources/array_index_write_runtime.dh", 99, "");
   ok &= expectSuccessCase("tests/sources/ex1.dh", 1, "س أقل\n");
 
-  ok &= expectFailureContains("tests/sources/break_outside_loop.dh", "break used outside of a loop");
+  ok &=
+      expectFailureContains("tests/sources/break_outside_loop.dh", "break used outside of a loop");
 
   return ok ? 0 : 1;
 }

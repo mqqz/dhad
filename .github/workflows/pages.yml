@@ -1,6 +1,7 @@
 name: Deploy Playground
 
 on:
+  pull_request:
   push:
     branches: ["main"]
   workflow_dispatch:
@@ -11,7 +12,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
+  group: pages-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -22,10 +23,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
       - name: Setup emsdk
         uses: mymindstorm/setup-emsdk@v14
         with:
-          version: latest
+          version: "5.0.0"
 
       - name: Configure wasm build
         run: emcmake cmake -S . -B build/wasm -DDHAD_BUILD_WASM=ON
@@ -41,12 +52,23 @@ jobs:
           cp build/dhad_web.js site/build/dhad_web.js
           cp build/dhad_web.wasm site/build/dhad_web.wasm
 
+      - name: Setup browser tests
+        run: |
+          python3 -m pip install -r tests/requirements-web.txt
+          python3 -m playwright install --with-deps chromium
+
+      - name: Test worker and built playground
+        run: |
+          node tests/web_worker_test.cjs
+          python3 tests/run_web_tests.py --site-dir site
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: site
 
   deploy:
+    if: github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-latest
     environment:

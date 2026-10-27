@@ -51,8 +51,7 @@ This is probabily the most straightforward way to get things going
    
    **Windows (PowerShell)**:
    ```powershell
-   .\dhad.exe examples\hello-world.dh -o hello.exe
-   .\hello.exe
+   .\dhad.exe examples\hello-world.dh
    ```
 
 ### Building From Source
@@ -67,7 +66,7 @@ Alternatively, if you'd rather build from source:
 
 2. **Clone and configure**
    ```bash
-   git clone https://example.com/dhad.git
+   git clone https://github.com/mqqz/dhad.git
    cd dhad
    cmake -S . -B build
    ```
@@ -101,3 +100,28 @@ Alternatively, if you'd rather build from source:
 
 *Contributions are welcome, just be aware that the design is changing quickly and I am still figuring out the fundamentals. 
 Tune in via issues/PRs if you want to help shape the language.*
+
+
+## Experimental language changes
+
+The compiler and interpreter now use signed 64-bit integers and double-precision
+floats. Integer overflow, division by zero, and invalid array access fail with
+runtime diagnostics. Logical operators short-circuit; string equality compares
+contents and array equality compares identity. Composite/function equality and
+top-level statements are rejected. Constants reject rebinding and direct indexed
+writes. These are breaking changes to the experimental language; see GRAMMAR.md
+for the execution rules. Native compilation finds `clang` on PATH; `DHAD_CLANG`
+can override the executable. Previously emitted IR and native binaries must be rebuilt.
+
+The browser C API still returns a heap-allocated UTF-8 string, freed with
+`dhad_free`, but that string is now a JSON object with `success`, `stdout`, `stderr`,
+`ast`, and `exitCode` fields. Ship the rebuilt WASM and worker together. Output
+emitted before runtime failure is preserved, and program output is never parsed
+as diagnostics.
+
+For local browser validation, build with `emcmake cmake -S . -B build/wasm
+-DDHAD_BUILD_WASM=ON`, then build the `dhad_web` target. Assemble `web/` and the
+JS/WASM pair under a site directory with a `build/` subdirectory. Install
+`tests/requirements-web.txt` and Playwright Chromium, then run
+`node tests/web_worker_test.cjs` and
+`python3 tests/run_web_tests.py --site-dir <site-directory>`.
