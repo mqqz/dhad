@@ -92,11 +92,7 @@ bool writeIRToTemp(const std::string& ir, std::string& outPath) {
 }
 
 bool invokeClang(const std::string& inputIR, const std::string& outputPath) {
-#ifdef DHAD_DEFAULT_CLANG
-  std::string clangPath = DHAD_DEFAULT_CLANG;
-#else
   std::string clangPath = "clang";
-#endif
   if (const char* env = std::getenv("DHAD_CLANG")) {
     clangPath = env;
   }

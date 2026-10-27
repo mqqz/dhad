@@ -1,1 +1,1 @@
-store i32 123
+store i64 123

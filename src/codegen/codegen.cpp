@@ -1,4 +1,5 @@
 #include "codegen.hpp"
+#include "../common/numeric.hpp"
 
 #include "../ast/ast.hpp"
 #include "../std/identifiers.hpp"
@@ -33,7 +34,6 @@ using llvm::sys::getDefaultTargetTriple;
 namespace {
 
 constexpr std::string_view kEntryFunctionName = u8"بداية";
-constexpr const char* kEntryFunctionLLVMName = "main";
 
 struct LoopContext {
   llvm::BasicBlock* continueTarget{nullptr};
@@ -45,70 +45,6 @@ std::string stripQuotes(std::string value) {
     value = value.substr(1, value.size() - 2);
   }
   return value;
-}
-
-bool normalizeNumericLiteral(std::string_view in, std::string& out) {
-  out.clear();
-  out.reserve(in.size());
-  for (std::size_t i = 0; i < in.size();) {
-    const unsigned char lead = static_cast<unsigned char>(in[i]);
-    if (lead < 0x80) {
-      out.push_back(static_cast<char>(lead));
-      i++;
-      continue;
-    }
-    if (i + 1 < in.size() && lead == 0xD9) {
-      const unsigned char b2 = static_cast<unsigned char>(in[i + 1]);
-      if (b2 >= 0xA0 && b2 <= 0xA9) {
-        out.push_back(static_cast<char>('0' + (b2 - 0xA0)));
-        i += 2;
-        continue;
-      }
-    }
-    if (i + 1 < in.size() && lead == 0xDB) {
-      const unsigned char b2 = static_cast<unsigned char>(in[i + 1]);
-      if (b2 >= 0xB0 && b2 <= 0xB9) {
-        out.push_back(static_cast<char>('0' + (b2 - 0xB0)));
-        i += 2;
-        continue;
-      }
-    }
-    return false;
-  }
-  return !out.empty();
-}
-
-bool parseInt32Literal(std::string_view text, int32_t& out) {
-  std::string normalized;
-  if (!normalizeNumericLiteral(text, normalized)) {
-    return false;
-  }
-  const char* begin = normalized.data();
-  const char* end = normalized.data() + normalized.size();
-  const auto parsed = std::from_chars(begin, end, out);
-  return parsed.ec == std::errc{} && parsed.ptr == end;
-}
-
-bool parseFloatLiteral(std::string_view text, float& out) {
-  std::string normalized;
-  if (!normalizeNumericLiteral(text, normalized)) {
-    return false;
-  }
-  char* end = nullptr;
-  const float value = std::strtof(normalized.c_str(), &end);
-  if (end != normalized.c_str() + normalized.size()) {
-    return false;
-  }
-  out = value;
-  return true;
-}
-
-llvm::FunctionCallee getTrapIntrinsic(llvm::Module& module) {
-#if LLVM_VERSION_MAJOR >= 19
-  return llvm::Intrinsic::getOrInsertDeclaration(&module, llvm::Intrinsic::trap);
-#else
-  return llvm::Intrinsic::getDeclaration(&module, llvm::Intrinsic::trap);
-#endif
 }
 
 void setModuleTargetTriple(llvm::Module& module) {
@@ -128,7 +64,9 @@ struct CodeGenModule::Impl {
     void visit(const ast::BlockStmt& node) override { result = impl.emitBlock(&node); }
     void visit(const ast::DeclarationStmt& node) override { result = impl.emitDeclaration(node); }
     void visit(const ast::AssignmentStmt& node) override { result = impl.emitAssignment(node); }
-    void visit(const ast::IndexAssignmentStmt& node) override { result = impl.emitIndexAssignment(node); }
+    void visit(const ast::IndexAssignmentStmt& node) override {
+      result = impl.emitIndexAssignment(node);
+    }
     void visit(const ast::IfStmt& node) override { result = impl.emitIf(node); }
     void visit(const ast::WhileStmt& node) override { result = impl.emitWhile(node); }
     void visit(const ast::ForStmt& node) override { result = impl.emitFor(node); }
@@ -136,10 +74,7 @@ struct CodeGenModule::Impl {
     void visit(const ast::BreakStmt&) override { result = impl.emitBreak(); }
     void visit(const ast::ContinueStmt&) override { result = impl.emitContinue(); }
     void visit(const ast::ExpressionStmt& node) override {
-      if (node.expr) {
-        (void)impl.emitExpression(node.expr.get());
-      }
-      result = true;
+      result = !node.expr || impl.emitExpression(node.expr.get()) != nullptr;
     }
 
     bool result{false};
@@ -155,11 +90,15 @@ struct CodeGenModule::Impl {
     void visit(const ast::UnaryExpr& node) override { value = impl.emitUnaryExpr(node); }
     void visit(const ast::LiteralExpr& node) override { value = impl.emitLiteralExpr(node); }
     void visit(const ast::IdentifierExpr& node) override { value = impl.emitIdentifierExpr(node); }
-    void visit(const ast::FieldAccessExpr& node) override { value = impl.emitFieldAccessExpr(node); }
+    void visit(const ast::FieldAccessExpr& node) override {
+      value = impl.emitFieldAccessExpr(node);
+    }
     void visit(const ast::IndexExpr& node) override { value = impl.emitIndexExpr(node); }
     void visit(const ast::CallExpr& node) override { value = impl.emitCallExpr(node); }
     void visit(const ast::ArrayLiteralExpr& node) override { value = impl.emitArrayLiteral(node); }
-    void visit(const ast::StructLiteralExpr& node) override { value = impl.emitStructLiteral(node); }
+    void visit(const ast::StructLiteralExpr& node) override {
+      value = impl.emitStructLiteral(node);
+    }
 
     llvm::Value* value{nullptr};
 
@@ -194,11 +133,14 @@ private:
   llvm::Value* emitArrayLiteral(const ast::ArrayLiteralExpr& expr);
   llvm::Value* emitStructLiteral(const ast::StructLiteralExpr& expr);
   llvm::Value* emitArithmeticBinary(ast::BinaryOp op, llvm::Value* lhs, llvm::Value* rhs);
-  llvm::Value* emitLogicalBinary(ast::BinaryOp op, llvm::Value* lhs, llvm::Value* rhs);
+  llvm::Value* emitShortCircuit(const ast::BinaryExpr& expr);
+  llvm::Value* emitStringEqual(llvm::Value* lhs, llvm::Value* rhs);
+  void emitGuard(llvm::Value* valid, const std::string& message);
+  llvm::Value* checkedInteger(ast::BinaryOp op, llvm::Value* lhs, llvm::Value* rhs);
+  bool emitEntryWrapper();
   llvm::Value* emitComparisonBinary(ast::BinaryOp op, llvm::Value* lhs, llvm::Value* rhs);
   llvm::Function* getOrDeclareFunction(const std::string& name);
   llvm::Function* declareBuiltinFunction(const stdlib::StdFunctionDescriptor& descriptor);
-  llvm::Function* declareExternalFallback(const std::string& name);
   bool emitStatement(const ast::Statement* stmt);
   bool emitBlock(const ast::BlockStmt* block);
   bool emitDeclaration(const ast::DeclarationStmt& stmt);
@@ -247,6 +189,7 @@ private:
   std::vector<std::unordered_map<std::string, llvm::AllocaInst*>> scopes;
   std::vector<LoopContext> loopStack;
   std::unordered_map<const ast::FunctionDecl*, llvm::Function*> functions;
+  std::unordered_map<std::string, llvm::Function*> functionNames;
   std::unordered_map<std::string, const ast::StructDecl*> structDecls;
   std::unordered_map<std::string, const ast::EnumDecl*> enumDecls;
   std::unordered_map<std::string, llvm::StructType*> structTypes;
@@ -260,6 +203,8 @@ bool CodeGenModule::Impl::generate(const ast::Program& program) {
   lastErrorMessage.clear();
   module = std::make_unique<llvm::Module>(moduleName, context);
   functions.clear();
+  functionNames.clear();
+  setModuleTargetTriple(*module);
   structDecls.clear();
   enumDecls.clear();
   structTypes.clear();
@@ -288,9 +233,11 @@ bool CodeGenModule::Impl::generate(const ast::Program& program) {
   }
 
   if (!ok) {
+    if (lastErrorMessage.empty()) lastErrorMessage = "Unsupported operation during code generation";
     return false;
   }
 
+  if (!emitEntryWrapper()) return false;
   injectStdRuntime();
 
   std::string verifyErrors;
@@ -351,14 +298,14 @@ llvm::StructType* CodeGenModule::Impl::getStructType(const ast::StructDecl& decl
 llvm::StructType* CodeGenModule::Impl::getArrayRuntimeType() {
   if (!arrayRuntimeType) {
     arrayRuntimeType = llvm::StructType::create(context, "dhad.array");
-    arrayRuntimeType->setBody({builder.getInt32Ty(), getBytePtrType()}, /*isPacked=*/false);
+    arrayRuntimeType->setBody({builder.getInt64Ty(), getBytePtrType()}, /*isPacked=*/false);
   }
   return arrayRuntimeType;
 }
 
 llvm::Value* CodeGenModule::Impl::emitCheckedArrayDataPtr(llvm::Value* arrayValue,
-                                                           llvm::Value* indexValue,
-                                                           llvm::Type* elementType) {
+                                                          llvm::Value* indexValue,
+                                                          llvm::Type* elementType) {
   if (!arrayValue || !indexValue || !elementType) {
     return nullptr;
   }
@@ -366,7 +313,7 @@ llvm::Value* CodeGenModule::Impl::emitCheckedArrayDataPtr(llvm::Value* arrayValu
   auto* arrayType = getArrayRuntimeType();
   auto* lenPtr = builder.CreateStructGEP(arrayType, arrayValue, 0, "arr.len.ptr");
   auto* dataPtrPtr = builder.CreateStructGEP(arrayType, arrayValue, 1, "arr.data.ptr");
-  auto* length = builder.CreateLoad(builder.getInt32Ty(), lenPtr, "arr.len");
+  auto* length = builder.CreateLoad(builder.getInt64Ty(), lenPtr, "arr.len");
   auto* data = builder.CreateLoad(getBytePtrType(), dataPtrPtr, "arr.data");
 
   auto* idx = ensureInteger(indexValue);
@@ -374,20 +321,11 @@ llvm::Value* CodeGenModule::Impl::emitCheckedArrayDataPtr(llvm::Value* arrayValu
     return nullptr;
   }
 
-  auto* nonNegative = builder.CreateICmpSGE(idx, builder.getInt32(0), "idx.nn");
+  auto* nonNegative = builder.CreateICmpSGE(idx, builder.getInt64(0), "idx.nn");
   auto* lessThanLen = builder.CreateICmpSLT(idx, length, "idx.lt_len");
   auto* inRange = builder.CreateAnd(nonNegative, lessThanLen, "idx.in_range");
 
-  auto* function = builder.GetInsertBlock()->getParent();
-  auto* okBB = llvm::BasicBlock::Create(context, "arr.idx.ok", function);
-  auto* failBB = llvm::BasicBlock::Create(context, "arr.idx.fail", function);
-  builder.CreateCondBr(inRange, okBB, failBB);
-
-  builder.SetInsertPoint(failBB);
-  builder.CreateCall(getTrapIntrinsic(*module), {});
-  builder.CreateUnreachable();
-
-  builder.SetInsertPoint(okBB);
+  emitGuard(inRange, "Array index out of bounds");
   return builder.CreateInBoundsGEP(elementType, data, idx, "arr.elem.ptr");
 }
 
@@ -398,11 +336,11 @@ llvm::Type* CodeGenModule::Impl::getTypeByExpr(const ast::TypeExpr* type) {
   if (auto* prim = llvm::dyn_cast<ast::TypePrimitiveExpr>(type)) {
     switch (prim->kind) {
     case typing::TypeKind::Int:
-      return llvm::Type::getInt32Ty(context);
+      return llvm::Type::getInt64Ty(context);
     case typing::TypeKind::Bool:
       return llvm::Type::getInt1Ty(context);
     case typing::TypeKind::Float:
-      return llvm::Type::getFloatTy(context);
+      return llvm::Type::getDoubleTy(context);
     case typing::TypeKind::Char:
       return llvm::Type::getInt8Ty(context);
     case typing::TypeKind::String:
@@ -443,11 +381,11 @@ llvm::Type* CodeGenModule::Impl::getTypeByCheckedType(const typing::TypePtr& typ
   }
   switch (type->kind) {
   case typing::TypeKind::Int:
-    return llvm::Type::getInt32Ty(context);
+    return llvm::Type::getInt64Ty(context);
   case typing::TypeKind::Bool:
     return llvm::Type::getInt1Ty(context);
   case typing::TypeKind::Float:
-    return llvm::Type::getFloatTy(context);
+    return llvm::Type::getDoubleTy(context);
   case typing::TypeKind::Char:
     return llvm::Type::getInt8Ty(context);
   case typing::TypeKind::String:
@@ -485,9 +423,9 @@ llvm::Type* CodeGenModule::Impl::getTypeByLiteral(const ast::LiteralExpr& litera
     return getBytePtrType();
   }
   if (literal.value.find('.') != std::string::npos) {
-    return llvm::Type::getFloatTy(context);
+    return llvm::Type::getDoubleTy(context);
   }
-  return llvm::Type::getInt32Ty(context);
+  return llvm::Type::getInt64Ty(context);
 }
 
 llvm::AllocaInst* CodeGenModule::Impl::createAlloca(llvm::Function* function, llvm::Type* type,
@@ -537,10 +475,10 @@ llvm::Value* CodeGenModule::Impl::convertToType(llvm::Value* value, llvm::Type* 
   if (value->getType()->isIntegerTy() && type->isFloatingPointTy()) {
     return builder.CreateSIToFP(value, type, "sitofp");
   }
-  if (value->getType()->isIntegerTy(1) && type->isIntegerTy(32)) {
+  if (value->getType()->isIntegerTy(1) && type->isIntegerTy(64)) {
     return builder.CreateZExt(value, type, "booltoint");
   }
-  if (value->getType()->isIntegerTy(32) && type->isIntegerTy(1)) {
+  if (value->getType()->isIntegerTy(64) && type->isIntegerTy(1)) {
     return builder.CreateICmpNE(value, llvm::ConstantInt::get(value->getType(), 0), "inttobool");
   }
   if (value->getType()->isIntegerTy() && type->isIntegerTy()) {
@@ -569,14 +507,14 @@ llvm::Value* CodeGenModule::Impl::ensureInteger(llvm::Value* value) {
   if (!value) {
     return nullptr;
   }
-  if (value->getType()->isIntegerTy(32)) {
+  if (value->getType()->isIntegerTy(64)) {
     return value;
   }
   if (value->getType()->isIntegerTy(1)) {
-    return builder.CreateZExt(value, builder.getInt32Ty(), "booltoint");
+    return builder.CreateZExt(value, builder.getInt64Ty(), "booltoint");
   }
   if (value->getType()->isIntegerTy()) {
-    return builder.CreateIntCast(value, builder.getInt32Ty(), true, "intcast");
+    return builder.CreateIntCast(value, builder.getInt64Ty(), true, "intcast");
   }
   return nullptr;
 }
@@ -589,7 +527,7 @@ llvm::Value* CodeGenModule::Impl::ensureFloat(llvm::Value* value) {
     return value;
   }
   if (value->getType()->isIntegerTy()) {
-    return builder.CreateSIToFP(value, builder.getFloatTy(), "sitofp");
+    return builder.CreateSIToFP(value, builder.getDoubleTy(), "sitofp");
   }
   return nullptr;
 }
@@ -627,11 +565,11 @@ bool CodeGenModule::Impl::declareFunction(const ast::FunctionDecl& fn) {
     returnType = llvm::Type::getVoidTy(context);
   }
   auto* type = llvm::FunctionType::get(returnType, paramTypes, /*isVarArg=*/false);
-  std::string llvmName =
-      fn.name == kEntryFunctionName ? std::string(kEntryFunctionLLVMName) : fn.name;
+  std::string llvmName = "dhad.fn." + fn.name;
   auto* function =
       llvm::Function::Create(type, llvm::Function::ExternalLinkage, llvmName, module.get());
   functions[&fn] = function;
+  functionNames[fn.name] = function;
   return true;
 }
 
@@ -693,19 +631,12 @@ bool CodeGenModule::Impl::emitBlock(const ast::BlockStmt* block) {
 
 bool CodeGenModule::Impl::emitDeclaration(const ast::DeclarationStmt& stmt) {
   auto* initializer = stmt.initializer ? emitExpression(stmt.initializer.get()) : nullptr;
-  llvm::Type* type = stmt.typeName ? getTypeByExpr(stmt.typeName.get()) : nullptr;
-  if (!type && initializer) {
-    type = initializer->getType();
-  }
-  if (!type) {
-    type = llvm::Type::getInt32Ty(context);
-  }
+  if (!initializer) return false;
+  llvm::Type* type = getTypeByCheckedType(stmt.checkedType);
+  if (!type) type = initializer->getType();
+  auto* value = convertToType(initializer, type);
+  if (!value) return false;
   auto* var = createAlloca(currentFunction, type, stmt.name);
-  llvm::Value* value =
-      initializer ? convertToType(initializer, type) : llvm::Constant::getNullValue(type);
-  if (!value) {
-    value = llvm::Constant::getNullValue(type);
-  }
   builder.CreateStore(value, var);
   defineVariable(stmt.name, var);
   return true;
@@ -735,16 +666,13 @@ bool CodeGenModule::Impl::emitIndexAssignment(const ast::IndexAssignmentStmt& st
   }
 
   auto* arrayValue = builder.CreateLoad(alloca->getAllocatedType(), alloca, stmt.target);
+  emitGuard(builder.CreateIsNotNull(arrayValue), "Null array access");
   auto* indexValue = emitExpression(stmt.index.get());
-  auto* value = emitExpression(stmt.value.get());
-  if (!arrayValue || !indexValue || !value) {
+  if (!arrayValue || !indexValue) {
     return false;
   }
 
   llvm::Type* elementType = getTypeByCheckedType(stmt.resolvedElementType());
-  if (!elementType && value) {
-    elementType = value->getType();
-  }
   if (!elementType) {
     return false;
   }
@@ -754,7 +682,7 @@ bool CodeGenModule::Impl::emitIndexAssignment(const ast::IndexAssignmentStmt& st
     return false;
   }
 
-  value = convertToType(value, elementType);
+  auto* value = convertToType(emitExpression(stmt.value.get()), elementType);
   if (!value) {
     return false;
   }
@@ -864,6 +792,7 @@ bool CodeGenModule::Impl::emitReturn(const ast::ReturnStmt& stmt) {
   if (stmt.value) {
     value = emitExpression(stmt.value.get());
   }
+  if (stmt.value && !value) return false;
   if (currentReturnType) {
     if (!value) {
       value = llvm::Constant::getNullValue(currentReturnType);
@@ -911,16 +840,31 @@ llvm::Value* CodeGenModule::Impl::emitExpression(const ast::Expression* expr) {
   }
   ExpressionEmitter emitter(*this);
   expr->accept(emitter);
+  if (!emitter.value && lastErrorMessage.empty()) {
+    lastErrorMessage = "Cannot lower " + std::string(expr->kindName()) + " at " +
+                       std::to_string(expr->getLocation().line) + ":" +
+                       std::to_string(expr->getLocation().column);
+  }
   return emitter.value;
 }
 
 llvm::Value* CodeGenModule::Impl::emitBinaryExpr(const ast::BinaryExpr& expr) {
+  if (expr.op == ast::BinaryOp::And || expr.op == ast::BinaryOp::Or) return emitShortCircuit(expr);
   auto* lhs = emitExpression(expr.lhs.get());
   auto* rhs = emitExpression(expr.rhs.get());
   if (!lhs || !rhs) {
     return nullptr;
   }
 
+  if ((expr.op == ast::BinaryOp::Eq || expr.op == ast::BinaryOp::Ne) &&
+      lhs->getType()->isPointerTy() && rhs->getType()->isPointerTy()) {
+    const auto left = expr.lhs->resolvedType(), right = expr.rhs->resolvedType();
+    auto* equal = (left && left->kind == typing::TypeKind::String) ||
+                          (right && right->kind == typing::TypeKind::String)
+                      ? emitStringEqual(lhs, rhs)
+                      : builder.CreateICmpEQ(lhs, rhs);
+    return expr.op == ast::BinaryOp::Eq ? equal : builder.CreateNot(equal);
+  }
   switch (expr.op) {
   case ast::BinaryOp::Add:
   case ast::BinaryOp::Sub:
@@ -929,7 +873,7 @@ llvm::Value* CodeGenModule::Impl::emitBinaryExpr(const ast::BinaryExpr& expr) {
     return emitArithmeticBinary(expr.op, lhs, rhs);
   case ast::BinaryOp::And:
   case ast::BinaryOp::Or:
-    return emitLogicalBinary(expr.op, lhs, rhs);
+    return nullptr;
   case ast::BinaryOp::Eq:
   case ast::BinaryOp::Ne:
   case ast::BinaryOp::Lt:
@@ -942,16 +886,19 @@ llvm::Value* CodeGenModule::Impl::emitBinaryExpr(const ast::BinaryExpr& expr) {
 }
 
 llvm::Value* CodeGenModule::Impl::emitUnaryExpr(const ast::UnaryExpr& expr) {
+  if (expr.op == ast::UnaryOp::Negate) {
+    if (const auto* literal = llvm::dyn_cast<ast::LiteralExpr>(expr.operand.get());
+        literal && numeric::isMinMagnitude(literal->value))
+      return builder.getInt64(INT64_MIN);
+  }
   auto* operand = emitExpression(expr.operand.get());
   if (!operand) {
     return nullptr;
   }
   if (expr.op == ast::UnaryOp::Negate) {
+    if (operand->getType()->isFloatingPointTy()) return builder.CreateFNeg(operand, "fneg");
     operand = ensureInteger(operand);
-    if (!operand) {
-      return nullptr;
-    }
-    return builder.CreateNeg(operand, "negtmp");
+    return operand ? checkedInteger(ast::BinaryOp::Sub, builder.getInt64(0), operand) : nullptr;
   }
   if (expr.op == ast::UnaryOp::Not) {
     operand = ensureBoolean(operand);
@@ -978,23 +925,24 @@ llvm::Value* CodeGenModule::Impl::emitLiteralExpr(const ast::LiteralExpr& expr) 
     return builder.CreateGlobalString(value, "str", 0, module.get());
   }
   if (expr.value.find('.') != std::string::npos) {
-    float number = 0.0f;
-    if (!parseFloatLiteral(expr.value, number)) {
+    double number = 0.0;
+    if (!numeric::parseFloat(expr.value, number)) {
       return nullptr;
     }
-    return llvm::ConstantFP::get(llvm::Type::getFloatTy(context), number);
+    return llvm::ConstantFP::get(llvm::Type::getDoubleTy(context), number);
   }
-  int32_t number = 0;
-  if (!parseInt32Literal(expr.value, number)) {
+  int64_t number = 0;
+  if (!numeric::parseInt(expr.value, number)) {
     return nullptr;
   }
-  return llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), number, true);
+  return llvm::ConstantInt::get(llvm::Type::getInt64Ty(context), number, true);
 }
 
 llvm::Value* CodeGenModule::Impl::emitIdentifierExpr(const ast::IdentifierExpr& expr) {
   auto* alloca = lookupVariable(expr.name);
   if (!alloca) {
-    return module->getFunction(expr.name);
+    auto it = functionNames.find(expr.name);
+    return it == functionNames.end() ? nullptr : it->second;
   }
   return builder.CreateLoad(alloca->getAllocatedType(), alloca, expr.name);
 }
@@ -1015,9 +963,10 @@ llvm::Value* CodeGenModule::Impl::emitFieldAccessExpr(const ast::FieldAccessExpr
     if (expr.field != u8"طول") {
       return nullptr;
     }
+    emitGuard(builder.CreateIsNotNull(baseValue), "Null array access");
     auto* arrayType = getArrayRuntimeType();
     auto* lenPtr = builder.CreateStructGEP(arrayType, baseValue, 0, "arr.len.ptr");
-    return builder.CreateLoad(builder.getInt32Ty(), lenPtr, "arr.len");
+    return builder.CreateLoad(builder.getInt64Ty(), lenPtr, "arr.len");
   }
   if (baseType->kind != typing::TypeKind::Product) {
     return nullptr;
@@ -1033,8 +982,7 @@ llvm::Value* CodeGenModule::Impl::emitFieldAccessExpr(const ast::FieldAccessExpr
   std::size_t index = 0;
   for (const auto& field : decl->fields) {
     if (field->name == expr.field) {
-      return builder.CreateExtractValue(baseValue, {static_cast<unsigned>(index)},
-                                        expr.field);
+      return builder.CreateExtractValue(baseValue, {static_cast<unsigned>(index)}, expr.field);
     }
     index++;
   }
@@ -1062,6 +1010,10 @@ llvm::Value* CodeGenModule::Impl::emitCallExpr(const ast::CallExpr& expr) {
     }
     args.push_back(value);
   }
+  if (callee->getReturnType()->isVoidTy()) {
+    builder.CreateCall(callee, args);
+    return llvm::ConstantPointerNull::get(getBytePtrType());
+  }
   return builder.CreateCall(callee, args, expr.callee + ".call");
 }
 
@@ -1070,6 +1022,8 @@ llvm::Value* CodeGenModule::Impl::emitIndexExpr(const ast::IndexExpr& expr) {
     return nullptr;
   }
   auto* arrayValue = emitExpression(expr.base.get());
+  if (!arrayValue) return nullptr;
+  emitGuard(builder.CreateIsNotNull(arrayValue), "Null array access");
   auto* indexValue = emitExpression(expr.index.get());
   if (!arrayValue || !indexValue) {
     return nullptr;
@@ -1124,18 +1078,19 @@ llvm::Value* CodeGenModule::Impl::emitArrayLiteral(const ast::ArrayLiteralExpr& 
         llvm::Function::Create(mallocType, llvm::Function::ExternalLinkage, "malloc", module.get());
   }
 
-  auto* count = llvm::ConstantInt::get(builder.getInt32Ty(), values.size());
+  auto* count = llvm::ConstantInt::get(builder.getInt64Ty(), values.size());
   auto* count64 = builder.CreateZExt(count, builder.getInt64Ty(), "arr.count64");
   auto* elementSize = llvm::ConstantExpr::getSizeOf(elementType);
   auto* bytes = builder.CreateMul(count64, elementSize, "arr.bytes");
   auto* rawData = builder.CreateCall(mallocFn, {bytes}, "arr.data.raw");
+  emitGuard(builder.CreateIsNotNull(rawData), "Allocation failed");
 
   for (std::size_t i = 0; i < values.size(); ++i) {
     auto* converted = convertToType(values[i], elementType);
     if (!converted) {
       return nullptr;
     }
-    auto* index = llvm::ConstantInt::get(builder.getInt32Ty(), i);
+    auto* index = llvm::ConstantInt::get(builder.getInt64Ty(), i);
     auto* slot = builder.CreateInBoundsGEP(elementType, rawData, index, "arrayelt.ptr");
     builder.CreateStore(converted, slot);
   }
@@ -1143,6 +1098,7 @@ llvm::Value* CodeGenModule::Impl::emitArrayLiteral(const ast::ArrayLiteralExpr& 
   auto* runtimeArrayType = getArrayRuntimeType();
   auto* headerSize = llvm::ConstantExpr::getSizeOf(runtimeArrayType);
   auto* rawHeader = builder.CreateCall(mallocFn, {headerSize}, "arr.header.raw");
+  emitGuard(builder.CreateIsNotNull(rawHeader), "Allocation failed");
   auto* lenPtr = builder.CreateStructGEP(runtimeArrayType, rawHeader, 0, "arr.len.ptr");
   auto* dataPtrPtr = builder.CreateStructGEP(runtimeArrayType, rawHeader, 1, "arr.data.ptr");
   builder.CreateStore(count, lenPtr);
@@ -1196,39 +1152,124 @@ llvm::Value* CodeGenModule::Impl::emitArithmeticBinary(ast::BinaryOp op, llvm::V
   if (!promoteNumericOperands(lhs, rhs, useFloat)) {
     return nullptr;
   }
+  if (!useFloat) return checkedInteger(op, lhs, rhs);
   switch (op) {
   case ast::BinaryOp::Add:
-    return useFloat ? builder.CreateFAdd(lhs, rhs, "faddtmp")
-                    : builder.CreateAdd(lhs, rhs, "addtmp");
+    return builder.CreateFAdd(lhs, rhs, "faddtmp");
   case ast::BinaryOp::Sub:
-    return useFloat ? builder.CreateFSub(lhs, rhs, "fsubtmp")
-                    : builder.CreateSub(lhs, rhs, "subtmp");
+    return builder.CreateFSub(lhs, rhs, "fsubtmp");
   case ast::BinaryOp::Mul:
-    return useFloat ? builder.CreateFMul(lhs, rhs, "fmultmp")
-                    : builder.CreateMul(lhs, rhs, "multmp");
+    return builder.CreateFMul(lhs, rhs, "fmultmp");
   case ast::BinaryOp::Div:
-    return useFloat ? builder.CreateFDiv(lhs, rhs, "fdivtmp")
-                    : builder.CreateSDiv(lhs, rhs, "divtmp");
+    emitGuard(builder.CreateFCmpUNE(rhs, llvm::ConstantFP::get(rhs->getType(), 0.0)),
+              "Division by zero");
+    return builder.CreateFDiv(lhs, rhs, "fdivtmp");
   default:
     return nullptr;
   }
 }
 
-llvm::Value* CodeGenModule::Impl::emitLogicalBinary(ast::BinaryOp op, llvm::Value* lhs,
-                                                    llvm::Value* rhs) {
-  lhs = ensureBoolean(lhs);
-  rhs = ensureBoolean(rhs);
-  if (!lhs || !rhs) {
-    return nullptr;
+void CodeGenModule::Impl::emitGuard(llvm::Value* valid, const std::string& message) {
+  auto* function = builder.GetInsertBlock()->getParent();
+  auto* ok = llvm::BasicBlock::Create(context, "check.ok", function);
+  auto* fail = llvm::BasicBlock::Create(context, "check.fail", function);
+  builder.CreateCondBr(valid, ok, fail);
+  builder.SetInsertPoint(fail);
+  const std::string text = "runtime error: " + message + "\n";
+  auto* msg = builder.CreateGlobalString(text, "error", 0, module.get());
+  auto write = module->getOrInsertFunction(
+      "write", llvm::FunctionType::get(
+                   builder.getInt64Ty(),
+                   {builder.getInt32Ty(), getBytePtrType(), builder.getInt64Ty()}, false));
+  builder.CreateCall(write, {builder.getInt32(2), msg, builder.getInt64(text.size())});
+  auto exit = module->getOrInsertFunction(
+      "exit", llvm::FunctionType::get(builder.getVoidTy(), {builder.getInt32Ty()}, false));
+  builder.CreateCall(exit, {builder.getInt32(1)});
+  builder.CreateUnreachable();
+  builder.SetInsertPoint(ok);
+}
+
+llvm::Value* CodeGenModule::Impl::checkedInteger(ast::BinaryOp op, llvm::Value* lhs,
+                                                 llvm::Value* rhs) {
+  if (op == ast::BinaryOp::Div) {
+    emitGuard(builder.CreateICmpNE(rhs, builder.getInt64(0)), "Division by zero");
+    auto* overflow = builder.CreateAnd(builder.CreateICmpEQ(lhs, builder.getInt64(INT64_MIN)),
+                                       builder.CreateICmpEQ(rhs, builder.getInt64(-1)));
+    emitGuard(builder.CreateNot(overflow), "Integer overflow");
+    return builder.CreateSDiv(lhs, rhs, "divtmp");
   }
-  switch (op) {
-  case ast::BinaryOp::And:
-    return builder.CreateAnd(lhs, rhs, "andtmp");
-  case ast::BinaryOp::Or:
-    return builder.CreateOr(lhs, rhs, "ortmp");
-  default:
-    return nullptr;
+  const auto id = op == ast::BinaryOp::Add   ? llvm::Intrinsic::sadd_with_overflow
+                  : op == ast::BinaryOp::Sub ? llvm::Intrinsic::ssub_with_overflow
+                                             : llvm::Intrinsic::smul_with_overflow;
+#if LLVM_VERSION_MAJOR >= 19
+  auto* intrinsic =
+      llvm::Intrinsic::getOrInsertDeclaration(module.get(), id, {builder.getInt64Ty()});
+#else
+  auto* intrinsic = llvm::Intrinsic::getDeclaration(module.get(), id, {builder.getInt64Ty()});
+#endif
+  auto* result = builder.CreateCall(intrinsic, {lhs, rhs});
+  auto* value = builder.CreateExtractValue(result, 0);
+  emitGuard(builder.CreateNot(builder.CreateExtractValue(result, 1)), "Integer overflow");
+  return value;
+}
+
+llvm::Value* CodeGenModule::Impl::emitShortCircuit(const ast::BinaryExpr& expr) {
+  auto* lhs = ensureBoolean(emitExpression(expr.lhs.get()));
+  if (!lhs) return nullptr;
+  auto* from = builder.GetInsertBlock();
+  auto* function = from->getParent();
+  auto* rhsBlock = llvm::BasicBlock::Create(context, "logic.rhs", function);
+  auto* end = llvm::BasicBlock::Create(context, "logic.end", function);
+  const bool isAnd = expr.op == ast::BinaryOp::And;
+  builder.CreateCondBr(lhs, isAnd ? rhsBlock : end, isAnd ? end : rhsBlock);
+  builder.SetInsertPoint(rhsBlock);
+  auto* rhs = ensureBoolean(emitExpression(expr.rhs.get()));
+  if (!rhs) return nullptr;
+  auto* rhsEnd = builder.GetInsertBlock();
+  builder.CreateBr(end);
+  builder.SetInsertPoint(end);
+  auto* result = builder.CreatePHI(builder.getInt1Ty(), 2);
+  result->addIncoming(builder.getInt1(!isAnd), from);
+  result->addIncoming(rhs, rhsEnd);
+  return result;
+}
+
+llvm::Value* CodeGenModule::Impl::emitStringEqual(llvm::Value* lhs, llvm::Value* rhs) {
+  auto* from = builder.GetInsertBlock();
+  auto* function = from->getParent();
+  auto* compare = llvm::BasicBlock::Create(context, "str.compare", function);
+  auto* end = llvm::BasicBlock::Create(context, "str.end", function);
+  auto* same = builder.CreateICmpEQ(lhs, rhs);
+  auto* both = builder.CreateAnd(builder.CreateIsNotNull(lhs), builder.CreateIsNotNull(rhs));
+  builder.CreateCondBr(both, compare, end);
+  builder.SetInsertPoint(compare);
+  auto strcmp = module->getOrInsertFunction(
+      "strcmp",
+      llvm::FunctionType::get(builder.getInt32Ty(), {getBytePtrType(), getBytePtrType()}, false));
+  auto* equal = builder.CreateICmpEQ(builder.CreateCall(strcmp, {lhs, rhs}), builder.getInt32(0));
+  builder.CreateBr(end);
+  builder.SetInsertPoint(end);
+  auto* result = builder.CreatePHI(builder.getInt1Ty(), 2);
+  result->addIncoming(same, from);
+  result->addIncoming(equal, compare);
+  return result;
+}
+
+bool CodeGenModule::Impl::emitEntryWrapper() {
+  auto it = functionNames.find(std::string(kEntryFunctionName));
+  if (it == functionNames.end()) {
+    lastErrorMessage = "Missing entry function 'بداية'";
+    return false;
   }
+  auto* entry = it->second;
+  auto* main = llvm::Function::Create(llvm::FunctionType::get(builder.getInt32Ty(), false),
+                                      llvm::Function::ExternalLinkage, "main", module.get());
+  builder.SetInsertPoint(llvm::BasicBlock::Create(context, "entry", main));
+  auto* result = builder.CreateCall(entry);
+  if (result->getType()->isIntegerTy())
+    builder.CreateRet(builder.CreateIntCast(result, builder.getInt32Ty(), false));
+  else builder.CreateRet(builder.getInt32(0));
+  return true;
 }
 
 llvm::Value* CodeGenModule::Impl::emitComparisonBinary(ast::BinaryOp op, llvm::Value* lhs,
@@ -1242,7 +1283,7 @@ llvm::Value* CodeGenModule::Impl::emitComparisonBinary(ast::BinaryOp op, llvm::V
     return useFloat ? builder.CreateFCmpOEQ(lhs, rhs, "feqtmp")
                     : builder.CreateICmpEQ(lhs, rhs, "eqtmp");
   case ast::BinaryOp::Ne:
-    return useFloat ? builder.CreateFCmpONE(lhs, rhs, "fnetmp")
+    return useFloat ? builder.CreateFCmpUNE(lhs, rhs, "fnetmp")
                     : builder.CreateICmpNE(lhs, rhs, "netmp");
   case ast::BinaryOp::Lt:
     return useFloat ? builder.CreateFCmpOLT(lhs, rhs, "flttmp")
@@ -1262,30 +1303,27 @@ llvm::Value* CodeGenModule::Impl::emitComparisonBinary(ast::BinaryOp op, llvm::V
 }
 
 llvm::Function* CodeGenModule::Impl::getOrDeclareFunction(const std::string& name) {
+  if (auto it = functionNames.find(name); it != functionNames.end()) return it->second;
   if (auto* existing = module->getFunction(name)) {
     return existing;
   }
   if (const auto* builtin = stdRuntime.resolve(name)) {
     return declareBuiltinFunction(*builtin);
   }
-  return declareExternalFallback(name);
+  lastErrorMessage = "Unsupported function: " + name;
+  return nullptr;
 }
 
 llvm::Function*
 CodeGenModule::Impl::declareBuiltinFunction(const stdlib::StdFunctionDescriptor& descriptor) {
   if (descriptor.asciiName == "std_print") {
-    auto* type = llvm::FunctionType::get(builder.getInt32Ty(), {getBytePtrType()},
+    auto* type = llvm::FunctionType::get(builder.getInt64Ty(), {getBytePtrType()},
                                          /*isVarArg=*/false);
     return llvm::Function::Create(type, llvm::Function::ExternalLinkage, descriptor.arabicName,
                                   module.get());
   }
-  return declareExternalFallback(descriptor.arabicName);
-}
-
-llvm::Function* CodeGenModule::Impl::declareExternalFallback(const std::string& name) {
-  std::vector<llvm::Type*> params;
-  auto* type = llvm::FunctionType::get(builder.getInt32Ty(), params, /*isVarArg=*/true);
-  return llvm::Function::Create(type, llvm::Function::ExternalLinkage, name, module.get());
+  lastErrorMessage = "Unsupported builtin: " + descriptor.arabicName;
+  return nullptr;
 }
 
 void CodeGenModule::Impl::injectStdRuntime() {
@@ -1334,12 +1372,16 @@ void CodeGenModule::Impl::definePrintFunction(const stdlib::StdFunctionDescripto
   argIter->setName("msg");
 
   auto* entry = llvm::BasicBlock::Create(context, "entry", printFunc);
-  llvm::IRBuilder<> runtimeBuilder(entry);
-  const std::string formatName(identifiers::kStdPrintFormatSymbol);
-  llvm::Value* format = runtimeBuilder.CreateGlobalString("%s\n", formatName, 0, module.get());
+  const auto saved = builder.saveIP();
+  builder.SetInsertPoint(entry);
   llvm::Value* msg = &*argIter;
-  auto* call = runtimeBuilder.CreateCall(printfFunc, {format, msg});
-  runtimeBuilder.CreateRet(call);
+  emitGuard(builder.CreateIsNotNull(msg), "Null string access");
+  const std::string formatName(identifiers::kStdPrintFormatSymbol);
+  auto* format = builder.CreateGlobalString("%s\n", formatName, 0, module.get());
+  builder.CreateCall(printfFunc, {format, msg});
+  // The language print result is a status, not a platform-dependent byte count.
+  builder.CreateRet(builder.getInt64(0));
+  builder.restoreIP(saved);
 }
 
 std::string CodeGenModule::Impl::emitIR() const {

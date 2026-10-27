@@ -1,4 +1,4 @@
-%dhad.array = type { i32, ptr }
+%dhad.array = type { i64, ptr }
 arr.len
 arr.elem.ptr
-@llvm.trap
+@exit
