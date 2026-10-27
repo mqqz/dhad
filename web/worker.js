@@ -1,12 +1,37 @@
 let wasmModule = null;
 
-function readCString(module, ptr) {
-  if (!ptr) {
-    return "";
+function invokeSource(type, source) {
+  const module = wasmModule;
+  let sourcePtr = 0;
+  let resultPtr = 0;
+  try {
+    sourcePtr = module.stringToNewUTF8(source);
+    if (!sourcePtr) {
+      throw new Error("Could not allocate source buffer");
+    }
+    resultPtr = type === "parse"
+      ? module._dhad_parse_ast(sourcePtr)
+      : module._dhad_run(sourcePtr);
+    if (!resultPtr) {
+      throw new Error("Could not allocate result buffer");
+    }
+    const result = JSON.parse(module.UTF8ToString(resultPtr));
+    if (!result || typeof result.success !== "boolean" ||
+        typeof result.stdout !== "string" || typeof result.stderr !== "string" ||
+        typeof result.ast !== "string" || !Number.isInteger(result.exitCode)) {
+      throw new Error("Invalid response from WASM module");
+    }
+    return {
+      success: result.success,
+      stdout: result.stdout,
+      stderr: result.stderr,
+      ast: result.ast,
+      exitCode: result.exitCode,
+    };
+  } finally {
+    if (resultPtr) module._dhad_free(resultPtr);
+    if (sourcePtr) module._dhad_free(sourcePtr);
   }
-  const text = module.UTF8ToString(ptr);
-  module._dhad_free(ptr);
-  return text;
 }
 
 async function initModule(modulePath) {
@@ -36,17 +61,9 @@ self.onmessage = async (event) => {
       throw new Error("WASM module is not initialized. Click Init Worker first.");
     }
 
-    if (msg.type === "parse") {
-      const ptr = wasmModule._dhad_parse_ast(wasmModule.allocateUTF8(msg.source || ""));
-      const ast = readCString(wasmModule, ptr);
-      self.postMessage({ id: msg.id, ok: true, type: "parse", ast });
-      return;
-    }
-
-    if (msg.type === "run") {
-      const ptr = wasmModule._dhad_run(wasmModule.allocateUTF8(msg.source || ""));
-      const output = readCString(wasmModule, ptr);
-      self.postMessage({ id: msg.id, ok: true, type: "run", output });
+    if (msg.type === "parse" || msg.type === "run") {
+      const result = invokeSource(msg.type, String(msg.source || ""));
+      self.postMessage({ ...result, id: msg.id, ok: true, type: msg.type });
       return;
     }
 

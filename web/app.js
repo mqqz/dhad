@@ -1,5 +1,6 @@
 const MAX_OUTPUT_CHARS = 16000;
 const RUN_TIMEOUT_MS = 2000;
+const INIT_TIMEOUT_MS = 10000;
 
 const EXAMPLES = {
   hello: `استورد أساس؛
@@ -71,15 +72,22 @@ function setAst(text) {
   el.ast.textContent = text || "";
 }
 
-function resetWorker() {
+function resetWorker(reason = new Error("Worker was reset")) {
+  for (const entry of state.pending.values()) {
+    entry.reject(reason);
+  }
+  state.pending.clear();
   if (state.worker) {
     state.worker.terminate();
   }
-  state.worker = new Worker("./worker.js");
+  state.worker = null;
   state.initialized = false;
   state.initializing = null;
   state.currentModulePath = "";
-  state.worker.onmessage = (event) => {
+  const worker = new Worker("./worker.js");
+  state.worker = worker;
+  worker.onmessage = (event) => {
+    if (state.worker !== worker) return;
     const msg = event.data || {};
     const entry = state.pending.get(msg.id);
     if (!entry) {
@@ -92,6 +100,13 @@ function resetWorker() {
       entry.reject(new Error(msg.error || "Worker error"));
     }
   };
+  const failWorker = (event) => {
+    if (state.worker !== worker) return;
+    if (event.preventDefault) event.preventDefault();
+    resetWorker(new Error(event.message || "Worker communication failed"));
+  };
+  worker.onerror = failWorker;
+  worker.onmessageerror = failWorker;
 }
 
 async function ensureWorkerReady() {
@@ -114,7 +129,7 @@ async function ensureWorkerReady() {
     resetWorker();
   }
   state.currentModulePath = modulePath;
-  state.initializing = callWorker({ type: "init", modulePath });
+  state.initializing = callWorker({ type: "init", modulePath }, INIT_TIMEOUT_MS);
   try {
     await state.initializing;
     state.initialized = true;
@@ -131,9 +146,7 @@ function callWorker(payload, timeoutMs = 0) {
   return new Promise((resolve, reject) => {
     const timer = timeoutMs
       ? setTimeout(() => {
-          state.pending.delete(id);
-          resetWorker();
-          reject(new Error("Execution timed out"));
+          resetWorker(new Error("Execution timed out"));
         }, timeoutMs)
       : null;
 
@@ -147,7 +160,13 @@ function callWorker(payload, timeoutMs = 0) {
         reject(err);
       },
     });
-    state.worker.postMessage({ ...payload, id });
+    try {
+      state.worker.postMessage({ ...payload, id });
+    } catch (error) {
+      const entry = state.pending.get(id);
+      state.pending.delete(id);
+      entry.reject(error);
+    }
   });
 }
 
@@ -186,15 +205,15 @@ async function init() {
     setBusy(true);
     try {
       await ensureWorkerReady();
-      const res = await callWorker({ type: "parse", source: el.source.value });
+      const res = await callWorker(
+        { type: "parse", source: el.source.value }, RUN_TIMEOUT_MS,
+      );
       setAst(res.ast);
-      if (res.ast.startsWith("error:")) {
-        setDiagnostics(res.ast);
-      } else {
-        setDiagnostics("");
-      }
+      setOutput(res.stdout);
+      setDiagnostics(res.stderr);
     } catch (error) {
       setDiagnostics(error.message);
+      setAst("");
     } finally {
       setBusy(false);
     }
@@ -208,13 +227,9 @@ async function init() {
         { type: "run", source: el.source.value },
         RUN_TIMEOUT_MS,
       );
-      if (res.output.startsWith("error:")) {
-        setDiagnostics(res.output);
-        setOutput("");
-      } else {
-        setDiagnostics("");
-        setOutput(res.output);
-      }
+      setDiagnostics(res.stderr);
+      setOutput(res.stdout);
+      setAst(res.ast);
     } catch (error) {
       setDiagnostics(error.message);
       setOutput("");

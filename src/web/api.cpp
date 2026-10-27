@@ -22,7 +22,32 @@ char* allocCString(const std::string& text) {
   return buffer;
 }
 
-char* failCString(const std::string& message) { return allocCString("error: " + message); }
+std::string jsonString(const std::string& value) {
+  std::string out = "\"";
+  const char hex[] = "0123456789abcdef";
+  for (unsigned char c : value) {
+    if (c == '"' || c == '\\') {
+      out += '\\';
+      out += static_cast<char>(c);
+    } else if (c < 0x20) {
+      out += "\\u00";
+      out += hex[c >> 4];
+      out += hex[c & 15];
+    } else out += static_cast<char>(c);
+  }
+  return out + "\"";
+}
+
+char* envelope(bool success, const std::string& stdoutText, const std::string& stderrText,
+               const std::string& ast, int exitCode) {
+  return allocCString(std::string("{\"success\":") + (success ? "true" : "false") +
+                      ",\"stdout\":" + jsonString(stdoutText) +
+                      ",\"stderr\":" + jsonString(stderrText) + ",\"ast\":" + jsonString(ast) +
+                      ",\"exitCode\":" + std::to_string(exitCode) + "}");
+}
+char* failCString(const std::string& message) {
+  return envelope(false, "", "error: " + message, "", 1);
+}
 
 } // namespace
 
@@ -39,10 +64,8 @@ DHAD_WEB_EXPORT char* dhad_parse_ast(const char* source) {
   options.includeIR = false;
 
   auto result = dhad::pipeline::compileString(std::string(source), options);
-  if (!result.success) {
-    return allocCString(result.stderrBuffer);
-  }
-  return allocCString(result.astDump);
+  return envelope(result.success, result.stdoutBuffer, result.stderrBuffer, result.astDump,
+                  result.success ? 0 : 1);
 }
 
 DHAD_WEB_EXPORT char* dhad_run(const char* source) {
@@ -54,10 +77,7 @@ DHAD_WEB_EXPORT char* dhad_run(const char* source) {
   options.sourceName = "<memory>";
 
   auto result = dhad::pipeline::runString(std::string(source), options);
-  if (!result.success) {
-    return allocCString(result.stderrBuffer);
-  }
-  return allocCString(result.stdoutBuffer);
+  return envelope(result.success, result.stdoutBuffer, result.stderrBuffer, "", result.exitCode);
 }
 
 DHAD_WEB_EXPORT void dhad_free(char* ptr) { std::free(ptr); }
