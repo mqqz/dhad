@@ -1,5 +1,6 @@
 #include "interp/interpreter.hpp"
 
+#include "../common/numeric.hpp"
 #include "../std/identifiers.hpp"
 
 #include <charconv>
@@ -19,6 +20,7 @@ constexpr std::string_view kEntryFunctionName = u8"بداية";
 struct Binding {
   Value value;
   bool isConst{false};
+  typing::TypePtr type;
 };
 
 struct NumericValue {
@@ -70,6 +72,7 @@ public:
 private:
   using Scope = std::unordered_map<std::string, Binding>;
 
+  Value convert(Value value, const typing::TypePtr& type);
   Value evalExpression(const ast::Expression& expr);
   ExecSignal executeStatement(const ast::Statement& stmt);
   ExecSignal executeBlock(const ast::BlockStmt& block);
@@ -93,7 +96,8 @@ private:
 
   void pushScope();
   void popScope();
-  bool declareBinding(const std::string& name, Value value, bool isConst, const SourceLocation& loc);
+  bool declareBinding(const std::string& name, Value value, bool isConst, const SourceLocation& loc,
+                      typing::TypePtr type = nullptr);
   Binding* lookupBinding(const std::string& name);
   const Binding* lookupBinding(const std::string& name) const;
 
@@ -103,7 +107,6 @@ private:
 
   void reportError(const SourceLocation& loc, std::string message);
   [[nodiscard]] bool hasError() const { return !errors_.empty(); }
-  static bool normalizeNumericLiteral(std::string_view in, std::string& out);
   static std::string stripQuotes(std::string text);
 
   std::unordered_map<std::string, const ast::FunctionDecl*> functions_;
@@ -112,6 +115,15 @@ private:
   std::vector<RuntimeError> errors_;
   std::string stdoutBuffer_;
 };
+
+Value InterpreterImpl::convert(Value value, const typing::TypePtr& type) {
+  if (!type || value.kind == Value::Kind::Null) return value;
+  if (type->kind == typing::TypeKind::Float && value.kind == Value::Kind::Int)
+    return Value::makeFloat(static_cast<double>(value.intValue));
+  if (type->kind == typing::TypeKind::Int && value.kind == Value::Kind::Bool)
+    return Value::makeInt(value.boolValue ? 1 : 0);
+  return value;
+}
 
 Value InterpreterImpl::evalExpression(const ast::Expression& expr) {
   if (const auto* node = llvm::dyn_cast<ast::BinaryExpr>(&expr)) {
@@ -172,11 +184,12 @@ ExecSignal InterpreterImpl::executeStatement(const ast::Statement& stmt) {
       reportError(decl->getLocation(), "Declaration missing initializer");
       return ExecSignal::makeError();
     }
-    Value init = evalExpression(*decl->initializer);
+    Value init = convert(evalExpression(*decl->initializer), decl->checkedType);
     if (hasError()) {
       return ExecSignal::makeError();
     }
-    if (!declareBinding(decl->name, std::move(init), decl->isConst, decl->getLocation())) {
+    if (!declareBinding(decl->name, std::move(init), decl->isConst, decl->getLocation(),
+                        decl->checkedType)) {
       return ExecSignal::makeError();
     }
     return ExecSignal::none();
@@ -196,7 +209,7 @@ ExecSignal InterpreterImpl::executeStatement(const ast::Statement& stmt) {
       reportError(assign->getLocation(), "Cannot assign to constant '" + assign->target + "'");
       return ExecSignal::makeError();
     }
-    binding->value = evalExpression(*assign->value);
+    binding->value = convert(evalExpression(*assign->value), binding->type);
     if (hasError()) {
       return ExecSignal::makeError();
     }
@@ -231,7 +244,8 @@ ExecSignal InterpreterImpl::executeStatement(const ast::Statement& stmt) {
       reportError(assign->index->getLocation(), "Array index out of bounds");
       return ExecSignal::makeError();
     }
-    elements[static_cast<std::size_t>(*index)] = evalExpression(*assign->value);
+    elements[static_cast<std::size_t>(*index)] =
+        convert(evalExpression(*assign->value), assign->resolvedElementType());
     if (hasError()) {
       return ExecSignal::makeError();
     }
@@ -350,6 +364,10 @@ Value InterpreterImpl::callFunction(std::string_view name, const std::vector<Val
       reportError(callLoc, "Function 'اطبع' expects 1 argument but got 0");
       return Value::makeNull();
     }
+    if (args.front().kind == Value::Kind::Null) {
+      reportError(callLoc, "Null string access");
+      return Value::makeNull();
+    }
     stdoutBuffer_ += asPrintableString(args.front());
     stdoutBuffer_ += "\n";
     return Value::makeInt(0);
@@ -363,14 +381,16 @@ Value InterpreterImpl::callFunction(std::string_view name, const std::vector<Val
 
   const ast::FunctionDecl* fn = it->second;
   if (args.size() != fn->params.size()) {
-    reportError(callLoc, "Function '" + fn->name + "' expects " + std::to_string(fn->params.size()) +
-                             " arguments but got " + std::to_string(args.size()));
+    reportError(callLoc, "Function '" + fn->name + "' expects " +
+                             std::to_string(fn->params.size()) + " arguments but got " +
+                             std::to_string(args.size()));
     return Value::makeNull();
   }
 
   pushScope();
   for (std::size_t i = 0; i < fn->params.size(); ++i) {
-    if (!declareBinding(fn->params[i]->name, args[i], false, callLoc)) {
+    if (!declareBinding(fn->params[i]->name, convert(args[i], fn->params[i]->type->checkedType),
+                        false, callLoc, fn->params[i]->type->checkedType)) {
       popScope();
       return Value::makeNull();
     }
@@ -384,7 +404,7 @@ Value InterpreterImpl::callFunction(std::string_view name, const std::vector<Val
   popScope();
 
   if (signal.kind == ExecSignal::Kind::Return) {
-    return signal.value;
+    return convert(signal.value, fn->returnType ? fn->returnType->checkedType : nullptr);
   }
   if (signal.kind == ExecSignal::Kind::None) {
     return Value::makeNull();
@@ -455,10 +475,10 @@ Value InterpreterImpl::evalBinary(const ast::BinaryExpr& expr) {
   case ast::BinaryOp::Gt:
   case ast::BinaryOp::Ge: {
     if (lhsNumeric->isFloat || rhsNumeric->isFloat) {
-      const double l = lhsNumeric->isFloat ? lhsNumeric->floatValue
-                                           : static_cast<double>(lhsNumeric->intValue);
-      const double r = rhsNumeric->isFloat ? rhsNumeric->floatValue
-                                           : static_cast<double>(rhsNumeric->intValue);
+      const double l =
+          lhsNumeric->isFloat ? lhsNumeric->floatValue : static_cast<double>(lhsNumeric->intValue);
+      const double r =
+          rhsNumeric->isFloat ? rhsNumeric->floatValue : static_cast<double>(rhsNumeric->intValue);
       switch (expr.op) {
       case ast::BinaryOp::Lt:
         return Value::makeBool(l < r);
@@ -502,6 +522,11 @@ Value InterpreterImpl::evalUnary(const ast::UnaryExpr& expr) {
     reportError(expr.getLocation(), "Unary expression is missing operand");
     return Value::makeNull();
   }
+  if (expr.op == ast::UnaryOp::Negate) {
+    if (const auto* literal = llvm::dyn_cast<ast::LiteralExpr>(expr.operand.get());
+        literal && numeric::isMinMagnitude(literal->value))
+      return Value::makeInt(INT64_MIN);
+  }
   Value operand = evalExpression(*expr.operand);
   if (expr.op == ast::UnaryOp::Not) {
     auto value = asBool(operand, expr.operand->getLocation());
@@ -517,6 +542,10 @@ Value InterpreterImpl::evalUnary(const ast::UnaryExpr& expr) {
     }
     if (numeric->isFloat) {
       return Value::makeFloat(-numeric->floatValue);
+    }
+    if (numeric->intValue == INT64_MIN) {
+      reportError(expr.getLocation(), "Integer overflow");
+      return Value::makeNull();
     }
     return Value::makeInt(-numeric->intValue);
   }
@@ -539,29 +568,15 @@ Value InterpreterImpl::evalLiteral(const ast::LiteralExpr& expr) {
     return Value::makeString(stripQuotes(text));
   }
 
-  std::string normalized;
-  if (!normalizeNumericLiteral(text, normalized)) {
-    reportError(expr.getLocation(), "Invalid numeric literal '" + text + "'");
-    return Value::makeNull();
+  if (text.find('.') != std::string::npos) {
+    double value;
+    if (numeric::parseFloat(text, value)) return Value::makeFloat(value);
+  } else {
+    int64_t value;
+    if (numeric::parseInt(text, value)) return Value::makeInt(value);
   }
-  if (normalized.find('.') != std::string::npos) {
-    char* end = nullptr;
-    const double v = std::strtod(normalized.c_str(), &end);
-    if (end != normalized.c_str() + normalized.size()) {
-      reportError(expr.getLocation(), "Invalid float literal '" + text + "'");
-      return Value::makeNull();
-    }
-    return Value::makeFloat(v);
-  }
-
-  int64_t value = 0;
-  const auto parsed =
-      std::from_chars(normalized.data(), normalized.data() + normalized.size(), value);
-  if (parsed.ec != std::errc{} || parsed.ptr != normalized.data() + normalized.size()) {
-    reportError(expr.getLocation(), "Invalid integer literal '" + text + "'");
-    return Value::makeNull();
-  }
-  return Value::makeInt(value);
+  reportError(expr.getLocation(), "Numeric literal out of range or invalid");
+  return Value::makeNull();
 }
 
 Value InterpreterImpl::evalIdentifier(const ast::IdentifierExpr& expr) {
@@ -647,7 +662,8 @@ Value InterpreterImpl::evalArrayLiteral(const ast::ArrayLiteralExpr& expr) {
       reportError(expr.getLocation(), "Array literal element is missing");
       return Value::makeNull();
     }
-    values.push_back(evalExpression(*element));
+    const auto& info = std::get<typing::ArrayTypeInfo>(expr.resolvedType()->payload);
+    values.push_back(convert(evalExpression(*element), info.element));
     if (hasError()) {
       return Value::makeNull();
     }
@@ -677,7 +693,10 @@ Value InterpreterImpl::evalStructLiteral(const ast::StructLiteralExpr& expr) {
       reportError(init->getLocation(), "Unknown field '" + init->name + "' in struct literal");
       return Value::makeNull();
     }
-    fit->second = evalExpression(*init->value);
+    typing::TypePtr fieldType;
+    for (const auto& field : structIt->second->fields)
+      if (field->name == init->name) fieldType = field->type->checkedType;
+    fit->second = convert(evalExpression(*init->value), fieldType);
     if (hasError()) {
       return Value::makeNull();
     }
@@ -686,7 +705,8 @@ Value InterpreterImpl::evalStructLiteral(const ast::StructLiteralExpr& expr) {
   return Value::makeStruct(expr.typeName, std::move(fields));
 }
 
-std::optional<NumericValue> InterpreterImpl::asNumeric(const Value& value, const SourceLocation& loc) {
+std::optional<NumericValue> InterpreterImpl::asNumeric(const Value& value,
+                                                       const SourceLocation& loc) {
   NumericValue out;
   switch (value.kind) {
   case Value::Kind::Int:
@@ -764,7 +784,7 @@ void InterpreterImpl::popScope() {
 }
 
 bool InterpreterImpl::declareBinding(const std::string& name, Value value, bool isConst,
-                                     const SourceLocation& loc) {
+                                     const SourceLocation& loc, typing::TypePtr type) {
   if (scopes_.empty()) {
     pushScope();
   }
@@ -773,7 +793,7 @@ bool InterpreterImpl::declareBinding(const std::string& name, Value value, bool 
     reportError(loc, "Duplicate declaration of '" + name + "'");
     return false;
   }
-  current.emplace(name, Binding{std::move(value), isConst});
+  current.emplace(name, Binding{std::move(value), isConst, std::move(type)});
   return true;
 }
 
@@ -799,10 +819,10 @@ const Binding* InterpreterImpl::lookupBinding(const std::string& name) const {
 
 bool InterpreterImpl::valuesEqual(const Value& lhs, const Value& rhs) const {
   if (lhs.kind == Value::Kind::Int && rhs.kind == Value::Kind::Float) {
-    return std::fabs(static_cast<double>(lhs.intValue) - rhs.floatValue) < 1e-9;
+    return static_cast<double>(lhs.intValue) == rhs.floatValue;
   }
   if (lhs.kind == Value::Kind::Float && rhs.kind == Value::Kind::Int) {
-    return std::fabs(lhs.floatValue - static_cast<double>(rhs.intValue)) < 1e-9;
+    return lhs.floatValue == static_cast<double>(rhs.intValue);
   }
   if (lhs.kind != rhs.kind) {
     return false;
@@ -813,7 +833,7 @@ bool InterpreterImpl::valuesEqual(const Value& lhs, const Value& rhs) const {
   case Value::Kind::Int:
     return lhs.intValue == rhs.intValue;
   case Value::Kind::Float:
-    return std::fabs(lhs.floatValue - rhs.floatValue) < 1e-9;
+    return lhs.floatValue == rhs.floatValue;
   case Value::Kind::Bool:
     return lhs.boolValue == rhs.boolValue;
   case Value::Kind::String:
@@ -826,8 +846,9 @@ bool InterpreterImpl::valuesEqual(const Value& lhs, const Value& rhs) const {
   return false;
 }
 
-std::optional<Value> InterpreterImpl::promoteNumeric(const NumericValue& lhs, const NumericValue& rhs,
-                                                      ast::BinaryOp op, const SourceLocation& loc) {
+std::optional<Value> InterpreterImpl::promoteNumeric(const NumericValue& lhs,
+                                                     const NumericValue& rhs, ast::BinaryOp op,
+                                                     const SourceLocation& loc) {
   if (lhs.isFloat || rhs.isFloat) {
     const double l = lhs.isFloat ? lhs.floatValue : static_cast<double>(lhs.intValue);
     const double r = rhs.isFloat ? rhs.floatValue : static_cast<double>(rhs.intValue);
@@ -839,7 +860,7 @@ std::optional<Value> InterpreterImpl::promoteNumeric(const NumericValue& lhs, co
     case ast::BinaryOp::Mul:
       return Value::makeFloat(l * r);
     case ast::BinaryOp::Div:
-      if (std::fabs(r) < 1e-12) {
+      if (r == 0.0) {
         reportError(loc, "Division by zero");
         return std::nullopt;
       }
@@ -849,59 +870,39 @@ std::optional<Value> InterpreterImpl::promoteNumeric(const NumericValue& lhs, co
     }
   }
 
-  const int64_t l = lhs.intValue;
-  const int64_t r = rhs.intValue;
+  const int64_t l = lhs.intValue, r = rhs.intValue;
+  int64_t result = 0;
+  bool valid = false;
   switch (op) {
   case ast::BinaryOp::Add:
-    return Value::makeInt(l + r);
+    valid = numeric::add(l, r, result);
+    break;
   case ast::BinaryOp::Sub:
-    return Value::makeInt(l - r);
+    valid = numeric::sub(l, r, result);
+    break;
   case ast::BinaryOp::Mul:
-    return Value::makeInt(l * r);
+    valid = numeric::mul(l, r, result);
+    break;
   case ast::BinaryOp::Div:
     if (r == 0) {
       reportError(loc, "Division by zero");
       return std::nullopt;
     }
-    return Value::makeInt(l / r);
+    valid = !(l == INT64_MIN && r == -1);
+    if (valid) result = l / r;
+    break;
   default:
     return std::nullopt;
   }
+  if (!valid) {
+    reportError(loc, "Integer overflow");
+    return std::nullopt;
+  }
+  return Value::makeInt(result);
 }
 
 void InterpreterImpl::reportError(const SourceLocation& loc, std::string message) {
   errors_.push_back(RuntimeError{loc, std::move(message)});
-}
-
-bool InterpreterImpl::normalizeNumericLiteral(std::string_view in, std::string& out) {
-  out.clear();
-  out.reserve(in.size());
-  for (std::size_t i = 0; i < in.size();) {
-    const unsigned char lead = static_cast<unsigned char>(in[i]);
-    if (lead < 0x80) {
-      out.push_back(static_cast<char>(lead));
-      ++i;
-      continue;
-    }
-    if (i + 1 < in.size() && lead == 0xD9) {
-      const unsigned char b2 = static_cast<unsigned char>(in[i + 1]);
-      if (b2 >= 0xA0 && b2 <= 0xA9) {
-        out.push_back(static_cast<char>('0' + (b2 - 0xA0)));
-        i += 2;
-        continue;
-      }
-    }
-    if (i + 1 < in.size() && lead == 0xDB) {
-      const unsigned char b2 = static_cast<unsigned char>(in[i + 1]);
-      if (b2 >= 0xB0 && b2 <= 0xB9) {
-        out.push_back(static_cast<char>('0' + (b2 - 0xB0)));
-        i += 2;
-        continue;
-      }
-    }
-    return false;
-  }
-  return !out.empty();
 }
 
 std::string InterpreterImpl::stripQuotes(std::string text) {
@@ -932,7 +933,7 @@ RunResult InterpreterImpl::run(const ast::Program& program) {
     Value exitValue = callFunction(kEntryFunctionName, {}, SourceLocation{0, 0});
     if (!hasError()) {
       if (exitValue.kind == Value::Kind::Int) {
-        return RunResult{true, static_cast<int>(exitValue.intValue), {}, stdoutBuffer_};
+        return RunResult{true, numeric::exitCode(exitValue.intValue), {}, stdoutBuffer_};
       }
       if (exitValue.kind == Value::Kind::Bool) {
         return RunResult{true, exitValue.boolValue ? 1 : 0, {}, stdoutBuffer_};

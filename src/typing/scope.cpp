@@ -35,9 +35,9 @@ void ScopeStack::exitScope() {
   scopes_.pop_back();
 }
 
-bool ScopeStack::declare(const std::string& name, TypePtr type) {
+bool ScopeStack::declare(const std::string& name, TypePtr type, bool isConst) {
   auto& scope = currentScope();
-  auto [_, inserted] = scope.emplace(name, std::move(type));
+  auto [_, inserted] = scope.emplace(name, Binding{std::move(type), isConst});
   return inserted;
 }
 
@@ -46,10 +46,18 @@ TypePtr ScopeStack::lookup(const std::string& name) const {
     const auto& scope = *scopeIt;
     auto found = scope.find(name);
     if (found != scope.end()) {
-      return found->second;
+      return found->second.type;
     }
   }
   return nullptr;
+}
+
+bool ScopeStack::isConst(const std::string& name) const {
+  for (auto it = scopes_.rbegin(); it != scopes_.rend(); ++it) {
+    auto found = it->find(name);
+    if (found != it->end()) return found->second.isConst;
+  }
+  return false;
 }
 
 ScopeStack::Scope& ScopeStack::currentScope() {

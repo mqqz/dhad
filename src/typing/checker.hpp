@@ -76,6 +76,7 @@ private:
 
   TypePtr resolveTypeExpr(const ast::TypeExpr* type);
   TypePtr resolveNamedType(std::string_view name, const SourceLocation& loc);
+  TypePtr resolveTypeExprImpl(const ast::TypeExpr* type);
   void registerTypeDecls(const ast::Program& program);
   [[nodiscard]] bool typeEquals(const TypePtr& lhs, const TypePtr& rhs) const;
   [[nodiscard]] bool isNumericKind(TypeKind kind) const;

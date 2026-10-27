@@ -6,8 +6,7 @@ program ::= { top_level } EOF ;
 Top Level
 top_level ::= import
             | function
-            | type_decl
-            | statement ;
+            | type_decl ;
 
 Import
 import ::= KW_IMPORT identifier ";" ;
@@ -149,3 +148,23 @@ field_access ::= primary "." identifier ;
 identifier ::= LETTER { LETTER | DIGIT | "_" } ;
 number ::= DIGIT { DIGIT } ;
 string ::= '"' { ANY_CHAR - '"' } '"' ;
+
+
+Execution semantics
+-------------------
+
+`عدد` is a signed 64-bit integer and `عشري` is an IEEE-754 double.
+Integer overflow (including negation and division), division by zero, null array
+access, and out-of-bounds indices are runtime errors. Numeric literals outside
+these ranges are rejected. Logical `و` and `أو` evaluate left to right and
+short-circuit. Floating equality is exact, including the usual NaN rules.
+
+Only imports, type declarations, and functions are allowed at the top level.
+Programs execute a parameterless `بداية` returning integer, boolean, or null/void.
+The integer exit result is reduced to its signed low 32 bits; the host operating
+system may further reduce process exit statuses. `اطبع` returns status zero.
+
+String literals cannot contain NUL bytes. Strings compare by contents (null equals only null), and arrays compare by
+identity. Equality on structs, tuples, unions, and functions is unsupported.
+`ثابت` prevents rebinding and direct indexed writes; mutable aliases to arrays
+still share their contents. Array length and indices use 64-bit integers.

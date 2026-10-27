@@ -1,4 +1,5 @@
 #include "typing/checker.hpp"
+#include "../common/numeric.hpp"
 
 #include <algorithm>
 #include <sstream>
@@ -76,6 +77,12 @@ bool TypeChecker::declareGlobalFunction(ast::FunctionDecl& fn) {
     return false;
   }
 
+  if (fn.name == u8"بداية" && (!params.empty() || (returnType->kind != TypeKind::Int &&
+                                                   returnType->kind != TypeKind::Bool &&
+                                                   returnType->kind != TypeKind::Null))) {
+    reportError(fn.getLocation(),
+                "Entry function must take no parameters and return int/bool/null");
+  }
   auto signature = makeFunction(std::move(params), returnType);
   if (!scopes_.declare(fn.name, signature)) {
     reportError(fn.getLocation(), "Duplicate function '" + fn.name + "'");
@@ -92,7 +99,8 @@ bool TypeChecker::checkTopLevel(ast::ASTNode& node) {
     return true;
   }
   if (auto* stmt = llvm::dyn_cast<ast::Statement>(&node)) {
-    return checkStatement(*stmt);
+    reportError(stmt->getLocation(), "Top-level statements are not supported");
+    return false;
   }
   if (auto* importDecl = llvm::dyn_cast<ast::ImportDecl>(&node)) {
     // Imports currently have no semantics.
@@ -207,7 +215,8 @@ bool TypeChecker::checkDeclaration(ast::DeclarationStmt& stmt) {
   if (!expectAssignable(stmt.initializer->getLocation(), declaredType, initType, "initializer")) {
     return false;
   }
-  if (!scopes_.declare(stmt.name, declaredType)) {
+  stmt.checkedType = declaredType;
+  if (!scopes_.declare(stmt.name, declaredType, stmt.isConst)) {
     reportError(stmt.getLocation(), "Duplicate declaration of '" + stmt.name + "'");
     return false;
   }
@@ -215,6 +224,10 @@ bool TypeChecker::checkDeclaration(ast::DeclarationStmt& stmt) {
 }
 
 bool TypeChecker::checkAssignment(ast::AssignmentStmt& stmt) {
+  if (scopes_.isConst(stmt.target)) {
+    reportError(stmt.getLocation(), "Cannot assign to constant '" + stmt.target + "'");
+    return false;
+  }
   auto targetType = scopes_.lookup(stmt.target);
   if (!targetType) {
     reportError(stmt.getLocation(), "Undeclared identifier '" + stmt.target + "'");
@@ -225,6 +238,10 @@ bool TypeChecker::checkAssignment(ast::AssignmentStmt& stmt) {
 }
 
 bool TypeChecker::checkIndexAssignment(ast::IndexAssignmentStmt& stmt) {
+  if (scopes_.isConst(stmt.target)) {
+    reportError(stmt.getLocation(), "Cannot assign to constant '" + stmt.target + "'");
+    return false;
+  }
   auto targetType = scopes_.lookup(stmt.target);
   if (!targetType) {
     reportError(stmt.getLocation(), "Undeclared identifier '" + stmt.target + "'");
@@ -401,14 +418,22 @@ TypePtr TypeChecker::checkBinary(ast::BinaryExpr& expr) {
       expr.op == ast::BinaryOp::Lt || expr.op == ast::BinaryOp::Le ||
       expr.op == ast::BinaryOp::Gt || expr.op == ast::BinaryOp::Ge) {
     if (expr.op == ast::BinaryOp::Eq || expr.op == ast::BinaryOp::Ne) {
+      const auto unsupported = [](TypeKind kind) {
+        return kind == TypeKind::Product || kind == TypeKind::Sum || kind == TypeKind::Function;
+      };
+      if (unsupported(lhsType->kind) || unsupported(rhsType->kind)) {
+        reportError(expr.getLocation(),
+                    "Equality is not supported for composite or function values");
+        return nullptr;
+      }
       auto numeric = arithmeticResultType(lhsType, rhsType);
       if (numeric) {
         return makePrimitive(TypeKind::Bool);
       }
       const bool lhsNull = lhsType && lhsType->kind == TypeKind::Null;
       const bool rhsNull = rhsType && rhsType->kind == TypeKind::Null;
-      const bool nullPointerCompare = (lhsNull && isNullableType(rhsType)) ||
-                                      (rhsNull && isNullableType(lhsType));
+      const bool nullPointerCompare =
+          (lhsNull && isNullableType(rhsType)) || (rhsNull && isNullableType(lhsType));
       if ((canImplicitlyConvert(lhsType, rhsType) && canImplicitlyConvert(rhsType, lhsType)) ||
           typeEquals(lhsType, rhsType) || nullPointerCompare) {
         return makePrimitive(TypeKind::Bool);
@@ -429,6 +454,13 @@ TypePtr TypeChecker::checkBinary(ast::BinaryExpr& expr) {
 }
 
 TypePtr TypeChecker::checkUnary(ast::UnaryExpr& expr) {
+  if (expr.op == ast::UnaryOp::Negate) {
+    if (auto* literal = llvm::dyn_cast<ast::LiteralExpr>(expr.operand.get());
+        literal && numeric::isMinMagnitude(literal->value)) {
+      literal->setResolvedType(makePrimitive(TypeKind::Int));
+      return makePrimitive(TypeKind::Int);
+    }
+  }
   auto operandType = checkExpression(*expr.operand);
   if (expr.op == ast::UnaryOp::Negate) {
     return requireNumeric(expr, operandType);
@@ -450,12 +482,20 @@ TypePtr TypeChecker::checkLiteral(ast::LiteralExpr& expr) {
     return makePrimitive(TypeKind::Null);
   }
   if (!value.empty() && value.front() == '"') {
+    if (value.find('\0') != std::string::npos) {
+      reportError(expr.getLocation(), "String literals cannot contain NUL bytes");
+      return nullptr;
+    }
     return makePrimitive(TypeKind::String);
   }
-  if (value.find('.') != std::string::npos) {
-    return makePrimitive(TypeKind::Float);
+  int64_t integer;
+  double floating;
+  const bool isFloat = value.find('.') != std::string::npos;
+  if (!(isFloat ? numeric::parseFloat(value, floating) : numeric::parseInt(value, integer))) {
+    reportError(expr.getLocation(), "Numeric literal out of range or invalid");
+    return nullptr;
   }
-  return makePrimitive(TypeKind::Int);
+  return makePrimitive(isFloat ? TypeKind::Float : TypeKind::Int);
 }
 
 TypePtr TypeChecker::checkIdentifier(ast::IdentifierExpr& expr) {
@@ -507,8 +547,8 @@ TypePtr TypeChecker::checkFieldAccess(ast::FieldAccessExpr& expr) {
       return type;
     }
   }
-  reportError(expr.getLocation(), "Unknown field '" + expr.field + "' on struct '" +
-                                      decl->name + "'");
+  reportError(expr.getLocation(),
+              "Unknown field '" + expr.field + "' on struct '" + decl->name + "'");
   return nullptr;
 }
 
@@ -677,6 +717,12 @@ bool TypeChecker::expectAssignable(const SourceLocation& loc, const TypePtr& tar
 }
 
 TypePtr TypeChecker::resolveTypeExpr(const ast::TypeExpr* type) {
+  auto result = resolveTypeExprImpl(type);
+  if (type) type->checkedType = result;
+  return result;
+}
+
+TypePtr TypeChecker::resolveTypeExprImpl(const ast::TypeExpr* type) {
   if (!type) {
     return nullptr;
   }
@@ -769,8 +815,8 @@ TypePtr TypeChecker::resolveNamedType(std::string_view name, const SourceLocatio
     members.reserve(structDecl->fields.size());
     for (const auto& field : structDecl->fields) {
       if (!seen.insert(field->name).second) {
-        reportError(field->getLocation(), "Duplicate field '" + field->name + "' in struct '" +
-                                            structDecl->name + "'");
+        reportError(field->getLocation(),
+                    "Duplicate field '" + field->name + "' in struct '" + structDecl->name + "'");
         continue;
       }
       auto memberType = resolveTypeExpr(field->type.get());
@@ -787,8 +833,8 @@ TypePtr TypeChecker::resolveNamedType(std::string_view name, const SourceLocatio
     variants.reserve(enumDecl->variants.size());
     for (const auto& variant : enumDecl->variants) {
       if (!seen.insert(variant->name).second) {
-        reportError(variant->getLocation(), "Duplicate variant '" + variant->name +
-                                               "' in enum '" + enumDecl->name + "'");
+        reportError(variant->getLocation(),
+                    "Duplicate variant '" + variant->name + "' in enum '" + enumDecl->name + "'");
         continue;
       }
       TypePtr variantType;

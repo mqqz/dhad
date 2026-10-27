@@ -237,6 +237,7 @@ protected:
 };
 
 struct TypeExpr : ASTNode {
+  mutable typing::TypePtr checkedType;
   static bool classof(const ASTNode* node) {
     switch (node->getKind()) {
     case Kind::TypeExpr:
@@ -323,12 +324,13 @@ struct DeclarationStmt : NodeWithKind<DeclarationStmt, ASTNode::Kind::Declaratio
   std::string name;
   NodePtr<TypeExpr> typeName;
   NodePtr<Expression> initializer;
+  typing::TypePtr checkedType;
 
   DeclarationStmt(bool isConst, std::string identifier, SourceLocation loc);
 };
 
-struct TypePrimitiveExpr : NodeWithKind<TypePrimitiveExpr, ASTNode::Kind::TypePrimitiveExpr,
-                                        TypeExpr> {
+struct TypePrimitiveExpr
+    : NodeWithKind<TypePrimitiveExpr, ASTNode::Kind::TypePrimitiveExpr, TypeExpr> {
   typing::TypeKind kind;
 
   TypePrimitiveExpr(typing::TypeKind kind, SourceLocation loc);
@@ -481,8 +483,7 @@ struct IdentifierExpr : NodeWithKind<IdentifierExpr, ASTNode::Kind::IdentifierEx
   IdentifierExpr(std::string identifier, SourceLocation loc);
 };
 
-struct FieldAccessExpr
-    : NodeWithKind<FieldAccessExpr, ASTNode::Kind::FieldAccessExpr, Expression> {
+struct FieldAccessExpr : NodeWithKind<FieldAccessExpr, ASTNode::Kind::FieldAccessExpr, Expression> {
   NodePtr<Expression> base;
   std::string field;
 

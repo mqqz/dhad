@@ -4,6 +4,7 @@
 #include <functional>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "typing/types.hpp"
@@ -16,7 +17,12 @@ namespace dhad::typing {
 
 class ScopeStack {
 public:
-  using Scope = std::unordered_map<std::string, TypePtr>;
+  struct Binding {
+    TypePtr type;
+    bool isConst{false};
+    Binding(TypePtr value, bool constant = false) : type(std::move(value)), isConst(constant) {}
+  };
+  using Scope = std::unordered_map<std::string, Binding>;
   using ScopeInitializer = std::function<void(Scope&)>;
 
   explicit ScopeStack(const stdlib::StdRuntime* runtime = nullptr,
@@ -25,8 +31,10 @@ public:
   void enterScope();
   void exitScope();
 
-  bool declare(const std::string& name, TypePtr type);
+  bool declare(const std::string& name, TypePtr type, bool isConst = false);
   [[nodiscard]] TypePtr lookup(const std::string& name) const;
+
+  [[nodiscard]] bool isConst(const std::string& name) const;
 
   [[nodiscard]] std::size_t depth() const { return scopes_.size(); }
 
